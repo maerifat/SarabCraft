@@ -1,0 +1,121 @@
+name: sarabcraft
+
+x-sarabcraft-env: &sarabcraft-env
+  HF_HUB_DISABLE_TELEMETRY: "1"
+  POSTGRES_HOST: sarabcraft-postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB:-sarabcraft}
+  POSTGRES_USER: ${POSTGRES_USER:-sarabcraft}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+  REDIS_URL: redis://sarabcraft-redis:6379/0
+  SARABCRAFT_STATE_DIR: /var/lib/sarabcraft
+  S3_ENDPOINT_URL: http://sarabcraft-minio:9000
+  ARTIFACT_REGION: us-east-1
+  ARTIFACT_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+  ARTIFACT_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+  ARTIFACT_BUCKET: ${ARTIFACT_BUCKET:-sarabcraft-artifacts}
+  ARTIFACT_FORCE_PATH_STYLE: "true"
+  HF_API_TOKEN: ${HF_API_TOKEN:-}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+  AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+  AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+  AZURE_VISION_ENDPOINT: ${AZURE_VISION_ENDPOINT:-}
+  AZURE_VISION_KEY: ${AZURE_VISION_KEY:-}
+  GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+  GCP_SERVICE_ACCOUNT_JSON: ${GCP_SERVICE_ACCOUNT_JSON:-}
+  GOOGLE_VISION_CREDENTIALS_JSON: ${GOOGLE_VISION_CREDENTIALS_JSON:-}
+  ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+
+services:
+  sarabcraft:
+    image: sarabcraft
+    container_name: sarabcraft
+    build: .
+    depends_on:
+      sarabcraft-postgres:
+        condition: service_healthy
+      sarabcraft-redis:
+        condition: service_healthy
+      sarabcraft-minio:
+        condition: service_started
+    ports:
+      - "7860:8000"
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+      - sarabcraft-state:/var/lib/sarabcraft
+    environment: *sarabcraft-env
+    restart: unless-stopped
+
+  sarabcraft-worker:
+    image: sarabcraft
+    container_name: sarabcraft-worker
+    build: .
+    command: ["python", "-m", "mlsec_app_new.backend.jobs.worker"]
+    depends_on:
+      sarabcraft-postgres:
+        condition: service_healthy
+      sarabcraft-redis:
+        condition: service_healthy
+      sarabcraft-minio:
+        condition: service_started
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+      - sarabcraft-state:/var/lib/sarabcraft
+    environment: *sarabcraft-env
+    restart: unless-stopped
+
+  sarabcraft-postgres:
+    image: postgres:17-alpine
+    container_name: sarabcraft-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sarabcraft}
+      POSTGRES_USER: ${POSTGRES_USER:-sarabcraft}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - sarabcraft-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sarabcraft} -d ${POSTGRES_DB:-sarabcraft}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  sarabcraft-redis:
+    image: redis:7.4-alpine
+    container_name: sarabcraft-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - sarabcraft-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  sarabcraft-minio:
+    image: minio/minio:latest
+    container_name: sarabcraft-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_BROWSER_REDIRECT_URL: ${MINIO_BROWSER_REDIRECT_URL:-http://localhost:9001}
+    volumes:
+      - sarabcraft-minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    restart: unless-stopped
+
+volumes:
+  hf-cache:
+  sarabcraft-state:
+  sarabcraft-postgres-data:
+  sarabcraft-redis-data:
+  sarabcraft-minio-data:
+
+networks:
+  default:
+    name: sarabcraft
