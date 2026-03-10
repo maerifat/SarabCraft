@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.git/
+.env
+
+frontend/node_modules/
+frontend/dist/
+
+*.tar.gz
+*.zip
+*.pth
+*.pt
+*.bin
+*.safetensors
