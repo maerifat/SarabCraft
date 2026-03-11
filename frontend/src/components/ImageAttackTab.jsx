@@ -14,6 +14,7 @@ import EnsemblePanel from './image/EnsemblePanel'
 import { buildAttackParamPayload } from './image/sarabcraftR1'
 import { downloadB64, slugify } from '../utils/download'
 import { downloadReport, downloadJSON } from '../utils/report'
+import { useImageAttack } from './ImageAttackContext'
 
 function normalizeModelItems(response) {
   if (Array.isArray(response?.items)) {
@@ -28,33 +29,37 @@ function normalizeModelItems(response) {
 }
 
 export default function ImageAttackTab() {
-  const [inputFile, setInputFile] = useState(null)
-  const [inputPreview, setInputPreview] = useState(null)
-  const [targetFile, setTargetFile] = useState(null)
-  const [targetPreview, setTargetPreview] = useState(null)
-  const [model, setModel] = useState('')
-  const [attack, setAttack] = useState('PGD')
-  const [paramValues, setParamValues] = useState({})
-  const [ensembleModels, setEnsembleModels] = useState([])
-  const [ensembleMode, setEnsembleMode] = useState('Simultaneous')
+  /* ── Persistent state (survives navigation via Context) ───────── */
+  const {
+    result, setResult,
+    inputFile, setInputFile,
+    inputPreview, setInputPreview,
+    targetFile, setTargetFile,
+    targetPreview, setTargetPreview,
+    model, setModel,
+    attack, setAttack,
+    paramValues, setParamValues,
+    ensembleModels, setEnsembleModels,
+    ensembleMode, setEnsembleMode,
+    loading, setLoading,
+    error, setError,
+    currentJobId, setCurrentJobId,
+    abortRef,
+    jobIdRef,
+  } = useImageAttack()
+
+  /* ── Ephemeral local state (OK to reset on remount) ───────────── */
   const [modelsList, setModelsList] = useState([])
   const [registry, setRegistry] = useState(FALLBACK_REGISTRY)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [result, setResult] = useState(null)
-  const [currentJobId, setCurrentJobId] = useState('')
   const [transferModal, setTransferModal] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [infoOpen, setInfoOpen] = useState(null)
-  const abortRef = useRef(null)
   const mountedRef = useRef(true)
-  const jobIdRef = useRef('')
 
   useEffect(() => {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
-      abortRef.current?.abort()
     }
   }, [])
 

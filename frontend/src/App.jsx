@@ -14,6 +14,7 @@ import NotFoundPage from './components/NotFoundPage'
 import { ToastProvider } from './components/ui/Toast'
 import { ConfirmProvider } from './components/ui/ConfirmDialog'
 import ErrorBoundary from './components/ui/ErrorBoundary'
+import { ImageAttackProvider } from './components/ImageAttackContext'
 
 const NAV_GROUPS = [
   {
@@ -189,6 +190,7 @@ function App() {
         </header>
 
         <main className="px-6 py-6 max-w-7xl">
+          <ImageAttackProvider>
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/classifier" element={<ClassifierTab />} />
@@ -205,6 +207,7 @@ function App() {
             <Route path="/settings/:tab" element={<SettingsPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
+          </ImageAttackProvider>
         </main>
       </div>
 
