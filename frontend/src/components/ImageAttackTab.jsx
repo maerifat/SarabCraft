@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { runImageAttack, getModels, getAttacks, createAbortable, cancelJobById } from '../api/client'
 import TransferModal from './TransferModal'
@@ -54,14 +54,6 @@ export default function ImageAttackTab() {
   const [transferModal, setTransferModal] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [infoOpen, setInfoOpen] = useState(null)
-  const mountedRef = useRef(true)
-
-  useEffect(() => {
-    mountedRef.current = true
-    return () => {
-      mountedRef.current = false
-    }
-  }, [])
 
   useEffect(() => {
     Promise.all([getModels(), getAttacks()]).then(([m, a]) => {
@@ -112,12 +104,10 @@ export default function ImageAttackTab() {
     const { signal, abort } = createAbortable()
     abortRef.current = { abort }
     jobIdRef.current = ''
-    if (mountedRef.current) {
-      setLoading(true)
-      setError('')
-      setResult(null)
-      setCurrentJobId('')
-    }
+    setLoading(true)
+    setError('')
+    setResult(null)
+    setCurrentJobId('')
     try {
       const fd = new FormData()
       fd.append('input_file', inputFile); fd.append('target_file', targetFile)
@@ -137,14 +127,14 @@ export default function ImageAttackTab() {
         cancelOnAbort: false,
         onCreated: (job) => {
           jobIdRef.current = job.job_id
-          if (mountedRef.current) setCurrentJobId(job.job_id)
+          setCurrentJobId(job.job_id)
         },
       })
-      if (mountedRef.current) setResult(nextResult)
+      setResult(nextResult)
     } catch (e) {
-      if (e.name !== 'AbortError' && mountedRef.current) setError(e.message)
+      if (e.name !== 'AbortError') setError(e.message)
     } finally {
-      if (mountedRef.current) setLoading(false)
+      setLoading(false)
       abortRef.current = null
     }
   }
@@ -153,15 +143,13 @@ export default function ImageAttackTab() {
     const jobId = jobIdRef.current
     abortRef.current?.abort()
     abortRef.current = null
-    if (mountedRef.current) {
-      setLoading(false)
-      setError('Cancellation requested. Open Jobs to monitor or resume later.')
-    }
+    setLoading(false)
+    setError('Cancellation requested. Open Jobs to monitor or resume later.')
     if (!jobId) return
     try {
       await cancelJobById(jobId)
     } catch (e) {
-      if (mountedRef.current) setError(e.message || 'Failed to cancel job')
+      setError(e.message || 'Failed to cancel job')
     }
   }
 
