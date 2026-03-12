@@ -214,6 +214,12 @@ export const transcribeAudio = fd => postFD('/attacks/asr/transcribe', fd);
 export const getUA3Models = () => get('/attacks/asr/ua3/models');
 export const runUA3Attack = fd => runJob('asr_ua3', fd);
 
+// Text attacks
+export const getTextModels = () => get('/attacks/text/models');
+export const getTextMethods = () => get('/attacks/text/methods');
+export const classifyText = fd => postFD('/attacks/text/classify', fd);
+export const runTextAttack = (fd, opts = {}) => runJob('text_attack', fd, opts);
+
 // Plugins (local only)
 export const getPlugins = () => get('/plugins/list');
 export const getEnabledPlugins = (type = 'image') => get(`/plugins/enabled?type=${type}`);

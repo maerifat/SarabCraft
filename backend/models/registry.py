@@ -1029,6 +1029,9 @@ def enrich_job_fields(kind: str, fields: dict[str, Any]) -> dict[str, Any]:
                 enriched["source_model_snapshot_json"] = json.dumps(snap)
             transfer_targets = _ensure_dict(enriched.get("transfer_targets_json"), default={})
             enriched["transfer_targets_snapshot_json"] = json.dumps(build_image_transfer_target_snapshot(transfer_targets))
+    elif kind == "text_attack":
+        # Text attacks resolve models by name directly; no snapshot needed yet
+        pass
     return enriched
 
 

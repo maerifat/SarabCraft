@@ -3,6 +3,7 @@ import { Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
 import LandingPage from './components/LandingPage'
 import ClassifierTab from './components/ClassifierTab'
 import ImageAttackTab from './components/ImageAttackTab'
+import TextAttackTab from './components/TextAttackTab'
 import AudioTabs from './components/AudioTabs'
 import Dashboard from './components/Dashboard'
 import HistoryPage from './components/HistoryPage'
@@ -28,6 +29,7 @@ const NAV_GROUPS = [
     label: 'Attack Surface',
     items: [
       { to: '/image-attack', label: 'Image Attack', icon: 'M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z' },
+      { to: '/text-attack', label: 'Text Attack', icon: 'M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z' },
       { to: '/audio', label: 'Audio Attack', icon: 'M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z' },
       { to: '/batch', label: 'Batch Attack', icon: 'M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z' },
     ]
@@ -195,6 +197,7 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/classifier" element={<ClassifierTab />} />
             <Route path="/image-attack" element={<ImageAttackTab />} />
+            <Route path="/text-attack" element={<TextAttackTab />} />
             <Route path="/audio" element={<AudioTabs />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/history" element={<HistoryPage />} />
@@ -223,6 +226,7 @@ const BREADCRUMB_MAP = {
   '/': 'Home',
   '/classifier': 'Analysis / Classify',
   '/image-attack': 'Image Attack',
+  '/text-attack': 'Text Attack',
   '/audio': 'Audio Attack',
   '/dashboard': 'Analytics Dashboard',
   '/history': 'Analysis / History',

@@ -74,6 +74,7 @@ JOB_DEFINITIONS = {
     "image_robustness": {"domain": "image", "title": "Image Robustness Comparison", "resume_supported": True},
     "audio_robustness": {"domain": "audio", "title": "Audio Robustness Comparison", "resume_supported": True},
     "benchmark": {"domain": "mixed", "title": "Attack Benchmark", "resume_supported": True},
+    "text_attack": {"domain": "text", "title": "Text Attack", "resume_supported": False},
 }
 
 
@@ -1244,12 +1245,76 @@ def _run_benchmark(job: dict) -> dict | None:
     raise ValueError("Unsupported benchmark domain")
 
 
+# ── Text Attack Handler ──────────────────────────────────────────────────────
+
+def _run_text_attack(job: dict) -> dict:
+    """Run a text adversarial attack job."""
+    import json as _json
+    from dataclasses import asdict
+    from attacks.text_result_builder import run_and_build_result
+    from models.text_loader import load_text_model
+    from attacks.text_config import AVAILABLE_TEXT_MODELS
+
+    fields = _fields(job)
+    job_id = job["job_id"]
+
+    text = fields.get("text", "")
+    model_name = fields.get("model", "textattack/bert-base-uncased-SST-2")
+    attack_name = fields.get("attack", "DeepWordBug")
+    target_label = fields.get("target_label") or None
+
+    # Resolve display name → model_id if needed
+    if model_name in AVAILABLE_TEXT_MODELS:
+        model_name = AVAILABLE_TEXT_MODELS[model_name]
+
+    # Parse params from JSON string if provided
+    params = {}
+    raw_params = fields.get("params", "{}")
+    if isinstance(raw_params, str):
+        try:
+            params = _json.loads(raw_params) if raw_params.strip() else {}
+        except (ValueError, TypeError):
+            params = {}
+    elif isinstance(raw_params, dict):
+        params = raw_params
+
+    try:
+        append_job_event(job_id, "progress", {"message": "Loading text model...", "progress": 0.1})
+        update_job_progress(job_id, current=0, total=1, message="Loading text model...")
+        model, tokenizer = load_text_model(model_name)
+
+        append_job_event(job_id, "progress", {"message": f"Running {attack_name}...", "progress": 0.2})
+        update_job_progress(job_id, current=0, total=1, message=f"Running {attack_name}...")
+
+        def _should_cancel():
+            return is_cancel_requested(job_id)
+
+        result = run_and_build_result(
+            attack_name=attack_name,
+            model=model,
+            tokenizer=tokenizer,
+            text=text,
+            target_label=target_label,
+            params=params,
+            should_cancel=_should_cancel,
+        )
+
+        update_job_progress(job_id, current=1, total=1, message="Complete")
+        return asdict(result)
+    except Exception as exc:
+        logger.exception("_run_text_attack failed: %s", exc)
+        append_job_event(job_id, "error", {"message": f"Text attack error: {exc}"})
+        raise
+
+
 def run_job(job: dict) -> dict | None:
     kind = job["kind"]
     logger.info("Running job %s (%s)", job["job_id"], kind)
 
     try:
-        if kind == "image_attack":
+        if kind == "text_attack":
+            result = _run_text_attack(job)
+        elif kind == "image_attack":
             result = _run_image_attack(job)
         elif kind == "audio_classification":
             result = _run_audio_classification(job)
