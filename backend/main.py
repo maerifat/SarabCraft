@@ -28,6 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.routes import attacks, verification, config, tts, audio_attacks, plugins, variables, models
+from backend.routes import text_attacks
 from backend.routes import history, explainability
 from backend.routes import batch
 from backend.routes import benchmark
@@ -125,6 +126,7 @@ def startup_runtime():
 
 app.include_router(attacks.router, prefix="/api/attacks", tags=["Image Attacks"])
 app.include_router(audio_attacks.router, prefix="/api/attacks", tags=["Audio Attacks"])
+app.include_router(text_attacks.router, prefix="/api/attacks", tags=["Text Attacks"])
 app.include_router(verification.router, prefix="/api/verification", tags=["Transfer Verification"])
 app.include_router(config.router, prefix="/api/config", tags=["Credentials & Configuration"])
 app.include_router(models.router, prefix="/api/models", tags=["Models Registry"])

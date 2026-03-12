@@ -64,6 +64,8 @@ def _file_policy(kind: str, fields: dict[str, Any]) -> dict[str, str]:
         "audio_robustness",
     }:
         return {"audio_file": "audio"}
+    if kind == "text_attack":
+        return {}
     return {}
 
 
