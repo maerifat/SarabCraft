@@ -20,7 +20,7 @@
 
 SarabCraft gives red teams, defenders, and researchers a single platform to demonstrate, measure, and communicate adversarial failure across image and audio systems.
 
-- **Recreate realistic failure cases** across image models, audio models, and speech systems with 32+ image attacks and 8 audio attack types
+- **Recreate realistic failure cases** across image models, audio models, language models, and speech systems with 32+ image attacks, 14 text attacks, and 8 audio attack types
 - **Measure more than a label flip** with perturbation metrics, GradCAM overlays, confidence shifts, side-by-side outputs, and transfer results
 - **Prove transfer risk across real targets** including cloud APIs, local models, and custom plugins rather than stopping at a single lab checkpoint
 - **Bring custom models and targets into the workflow** from the UI so teams can test the systems they actually care about
@@ -72,7 +72,7 @@ Use Docker when you want the full analyst workflow, including long-running jobs,
 
 1. Open **Settings > Models** to add custom local image, audio, or ASR models and any remote verification targets you want to test.
 2. Open **Settings > Credentials** to configure provider profiles for Hugging Face, AWS, Azure, GCP, ElevenLabs, and other supported services.
-3. Run **Image Attack** or **Audio Attack** on a single sample, then verify transfer against local or remote targets.
+3. Run **Image Attack**, **Text Attack**, or **Audio Attack** on a single sample, then verify transfer against local or remote targets.
 4. Use **Jobs** for long-running attacks, robustness comparisons, and benchmark runs.
 5. Review **Dashboard** and **History**, then export HTML or JSON evidence when you are ready to share results.
 
@@ -98,6 +98,14 @@ Use Docker when you want the full analyst workflow, including long-running jobs,
 - **Standard mode** is built for strong single-model transfer studies.
 - **Multi-image transfer mode** unlocks broader bank-building strategies for harder evaluations.
 - **Cloud verification stays in the same workflow** through AWS Rekognition, Azure Computer Vision, and Google Cloud Vision integrations.
+
+### Text Attacks (14 types)
+
+| Category | Methods |
+|---|---|
+| **Character-Level** | DeepWordBug, TextBugger, HotFlip, Pruthi2019 |
+| **Word-Level** | TextFooler, BERT-Attack, BAE, PWWS, Alzantot GA, Faster Alzantot GA, IGA, PSO |
+| **Sentence-Level** | Clare, Back-Translation |
 
 ### Audio Attacks (8 types)
 
@@ -137,8 +145,8 @@ Results include: target match status, confidence drop, original label removal, p
 
 SarabCraft includes a centralized model management workflow under **Settings > Models**.
 
-- **Domain-first management** with separate **Image** and **Audio** tabs
-- **Custom local model onboarding** for image classifiers, audio classifiers, and ASR models
+- **Domain-first management** with separate **Image**, **Text**, and **Audio** tabs
+- **Custom local model onboarding** for image classifiers, text classifiers, audio classifiers, and ASR models
 - **Remote target management** for Hugging Face API targets and supported cloud verification services
 - **Workflow-aware enablement** so one local model can participate in classification, attacks, robustness, benchmarks, and local verification where it belongs
 - **Operational controls** to test, duplicate, edit, disable, or archive built-in and custom entries
@@ -152,6 +160,8 @@ This means you can add a custom checkpoint or remote target once, activate the w
 
 **Image** — 30+ built-in architectures including ResNet, ConvNeXt, ViT, DeiT, BEiT, Swin, SwinV2, DINOv2, MobileViT, EfficientNet, RegNet, and more, plus custom local image models you register in **Settings > Models**.
 
+**Text** — built-in text classifiers such as BERT (SST-2, AG News, MNLI, Yelp) and DistilBERT, plus custom local text models.
+
 **Audio** — built-in audio classifiers such as AST (Speech Commands, AudioSet), Wav2Vec2 (Emotion, Language ID), and HuBERT, plus custom local audio classifiers.
 
 **ASR** — built-in OpenAI Whisper variants (base.en, small.en, base, small), plus custom local ASR models.
@@ -162,7 +172,7 @@ This means you can add a custom checkpoint or remote target once, activate the w
 
 ## Analysis Features
 
-- **Perturbation Metrics** — L0, L1, L2, L-infinity, SSIM, PSNR, and MSE for every run
+- **Perturbation Metrics** — L0, L1, L2, L-infinity, SSIM, PSNR, and MSE for image/audio, plus Perturbation Ratio and Semantic Similarity for text
 - **GradCAM** — Attention overlays showing how attacks redirect model focus
 - **Batch Mode** — Run the same attack across multiple inputs and get aggregate success rates
 - **Robustness Comparison** — Run one attack across many models to see what breaks and what holds
@@ -223,8 +233,8 @@ Remote verification targets can use the provider profiles configured in **Settin
 
 ## Typical Workflows
 
-- **Custom model onboarding** — register a new image, audio, or ASR model in **Settings > Models**, choose the workflows it should support, and immediately reuse it across the platform
-- **Targeted image evasion** — craft one adversarial image, inspect predictions, verify distortion, and export the result
+- **Custom model onboarding** — register a new image, text, audio, or ASR model in **Settings > Models**, choose the workflows it should support, and immediately reuse it across the platform
+- **Targeted evasion** — craft one adversarial image or text, inspect predictions, verify distortion, and export the result
 - **Batch attack study** — run the same attack across multiple inputs and identify success-rate trends
 - **Model robustness sweep** — test one attack against many architectures to see which families are fragile
 - **Transfer validation** — check whether adversarial examples survive across cloud APIs, local models, and custom plugins
