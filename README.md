@@ -82,15 +82,41 @@ Use Docker when you want the full analyst workflow, including long-running jobs,
 
 ### Image (32+ methods)
 
-| Category | Methods |
-|---|---|
-| **Gradient (L∞)** | FGSM, I-FGSM, PGD, APGD, MI-FGSM, DI-FGSM, TI-FGSM, NI-FGSM, SI-NI-FGSM, VMI-FGSM, VNI-FGSM, PI-FGSM, Jitter |
-| **Optimization** | DeepFool (L2), C&W (L2), FAB, JSMA (L0), EAD (L1+L2), SparseFool |
-| **Transfer** | SSA, Admix, BSR, CFM (CVPR 2023), TA-Bench (NeurIPS 2023) |
-| **Black-Box** | Square Attack, SPSA, One Pixel, Boundary Attack, HopSkipJump |
-| **Physical** | Adversarial Patch, UAP |
-| **Research** | SarabCraft R1 — SarabCraft's first in-house transfer-focused image attack with standard and multi-image transfer modes |
-| **Ensemble** | AutoAttack (APGD-CE + APGD-DLR + FAB + Square) |
+| Category | Method | Description |
+|---|---|---|
+| **Gradient (L∞)** | FGSM | Single-step gradient sign perturbation. Fastest but weakest attack. |
+| | I-FGSM | Iterative FGSM with small steps. Stronger than single-step FGSM. |
+| | PGD | Projected Gradient Descent with random start. Standard strong white-box baseline. |
+| | APGD | Auto-PGD: adaptive step-size schedule + DLR loss. Parameter-free, strictly stronger. |
+| | MI-FGSM | Momentum Iterative FGSM. Accumulates gradient momentum for better transferability. |
+| | DI-FGSM | Diverse Input FGSM. Random resize-pad transform at each step improves transfer. |
+| | TI-FGSM | Translation-Invariant FGSM. Gaussian kernel smooths gradients for shift invariance. |
+| | NI-FGSM | Nesterov Iterative FGSM. Computes gradient at lookahead position for faster convergence. |
+| | SI-NI-FGSM | Scale-Invariant Nesterov FGSM. Averages gradients at multiple image scales. |
+| | VMI-FGSM | Variance-Tuned MI-FGSM. Adds neighbourhood gradient variance to reduce overfitting. |
+| | VNI-FGSM | Variance-tuned Nesterov FGSM. Combines VMI variance with Nesterov lookahead momentum. |
+| | PI-FGSM | Patch-wise Iterative FGSM. Amplifies perturbation through project kernel for targeted transfer. |
+| | Jitter | PGD with random neighbourhood sampling before each gradient step. Escapes sharp local minima. |
+| **Optimization** | DeepFool (L2) | Finds minimal perturbation to cross the decision boundary. Iterative linearisation. |
+| | C&W (L2) | Optimization-based L2 attack using Adam. Highly effective, slower. Gold standard for L2. |
+| | FAB | Fast Adaptive Boundary: finds closest adversarial by projecting onto decision boundary. |
+| | JSMA (L0) | Jacobian Saliency Map Attack. Uses Jacobian to find most impactful pixels. Changes fewest pixels. |
+| | EAD (L1+L2) | Elastic-Net Attack: L1+L2 regularised C&W variant. Produces sparse perturbations via ISTA. |
+| | SparseFool | Sparse DeepFool: finds minimal L1 perturbation by keeping only most salient pixel changes. |
+| **Transfer** | SSA | Spectrum Simulation Attack: augments in DCT frequency domain to prevent model-specific overfitting. |
+| | Admix | Mixes random images into input during attack to prevent overfitting to source model. |
+| | BSR | Block Shuffle & Rotation: randomly shuffles and rotates image blocks for transfer robustness. |
+| | CFM (CVPR 2023) | CFM + RDI + MI + TI + Logit Loss. Strongest single-model transfer baseline prior to PHANTOM. |
+| | TA-Bench | UN+PI+DI+TI+NI+MI — strongest composite baseline from the Transfer-Attack Benchmark. |
+| **Black-Box** | Square Attack | Score-based random search with square-shaped colour patches. NO gradients needed. Query-efficient. |
+| | SPSA | Estimates gradients via random perturbation pairs. Works with only model output probabilities. |
+| | One Pixel | Differential evolution to find best 1-10 pixels to change. Famous L0 attack. No gradients. |
+| | Boundary Attack | Decision-based: starts from adversarial noise, walks along boundary toward clean image. Hard-label. |
+| | HopSkipJump | Improved boundary attack with gradient estimation via binary search + Monte Carlo sampling. |
+| **Physical** | Adversarial Patch | Optimises a small patch that causes misclassification when placed on any image. Works physically. |
+| | UAP | Universal Adversarial Perturbation: single image-agnostic noise that fools the model on most inputs. |
+| **Research** | SarabCraft R1 | SarabCraft's first in-house transfer-focused image attack with standard and multi-image transfer modes. |
+| **Ensemble** | AutoAttack | Ensemble of APGD-CE, APGD-DLR, FAB, and Square. Parameter-free robustness evaluation. |
 
 ### SarabCraft Research
 
@@ -101,11 +127,22 @@ Use Docker when you want the full analyst workflow, including long-running jobs,
 
 ### Text Attacks (14 types)
 
-| Category | Methods |
-|---|---|
-| **Character-Level** | DeepWordBug, TextBugger, HotFlip, Pruthi2019 |
-| **Word-Level** | TextFooler, BERT-Attack, BAE, PWWS, Alzantot GA, Faster Alzantot GA, IGA, PSO |
-| **Sentence-Level** | Clare, Back-Translation |
+| Category | Method | Description |
+|---|---|---|
+| **Character-Level** | DeepWordBug | Scores word importance via delete-one, then applies character perturbations to top-k important words. |
+| | TextBugger | Five character-level perturbations: insert space, delete char, swap adjacent, substitute homoglyph, substitute nearby key. |
+| | HotFlip | Gradient-based character flip: computes gradient w.r.t. one-hot character/token embeddings and finds best substitution. |
+| | Pruthi2019 | Simulates common typos: swap adjacent characters, delete characters, insert characters, and substitute characters. |
+| **Word-Level** | TextFooler | Word importance ranking → counter-fitted embedding neighbours → filtered by POS match + semantic similarity. |
+| | BERT-Attack | Uses BERT masked language model to generate contextually appropriate word substitutions. Sub-word aware. |
+| | BAE | Four strategies using BERT MLM — Replace (R), Insert (I), combined R+I, and Delete (D). |
+| | PWWS | Probability Weighted Word Saliency. Uses WordNet synonyms filtered by POS tag, greedy substitution. |
+| | Alzantot GA | Genetic algorithm: population of perturbed texts → crossover + mutation → fitness selection. Evolutionary search. |
+| | Faster Alzantot GA | Optimized genetic algorithm 10-20x faster than original Alzantot using language model scoring for fluency. |
+| | IGA | Improved Genetic Algorithm with prioritized word importance ranking and enhanced search strategy. |
+| | PSO | Particle Swarm Optimization with sememe-based word substitution. Combinatorial optimization approach. |
+| **Sentence-Level** | Clare | Contextualized perturbation using BERT MLM for Replace, Insert, and Merge operations. |
+| | Back-Translation | Paraphrase via translation round-trip: English → pivot language → English using MarianMT. |
 
 ### Audio Attacks (8 types)
 
