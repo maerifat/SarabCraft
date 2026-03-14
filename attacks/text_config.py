@@ -38,16 +38,25 @@ TEXT_ATTACK_REGISTRY = {
         },
     },
     "TextBugger": {
-        "cat": "Character-Level",
-        "threat": "blackbox",
+        "cat": "Hybrid (Character + Word)",
+        "threat": "whitebox/blackbox",
         "paper": "TEXTBUGGER: Generating Adversarial Text Against Real-world Applications",
         "authors": "Li et al.",
         "year": 2019,
         "arxiv": "1812.05271",
-        "desc": "Five character-level perturbations: insert space, delete char, swap adjacent, "
-                "substitute homoglyph (visually similar Unicode), substitute nearby keyboard key.",
+        "desc": "Dual-mode attack with 5 perturbations: Insert (space), Delete (char), Swap (adjacent), "
+                "Sub-C (homoglyph + keyboard typo), Sub-W (GloVe embedding neighbour, k=5). White-box "
+                "(gradient-based) or black-box (sentence + word importance) scoring. Semantic similarity ≥ 0.8.",
         "params": {
             "max_perturbations": {"type": "int", "default": 5, "min": 1, "max": 50, "step": 1},
+            "mode": {"type": "select", "default": "black-box", 
+                     "options": ["black-box", "white-box"]},
+            "strategy": {"type": "select", "default": "combined",
+                        "options": ["bug", "word", "combined"]},
+            "similarity_threshold": {"type": "float", "default": 0.8, 
+                                    "min": 0.5, "max": 1.0, "step": 0.05},
+            "max_queries": {"type": "int", "default": 5000, "min": 100, "max": 10000, "step": 100},
+            "seed": {"type": "int", "default": None, "min": 0, "max": 999999, "step": 1},
         },
     },
     "HotFlip": {

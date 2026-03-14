@@ -13,6 +13,16 @@ import logging
 
 logger = logging.getLogger("textattack.attacks.deepwordbug")
 
+# ── QWERTY keyboard layout for adjacent key substitution ──────────────────────
+KEYBOARD_NEIGHBORS = {
+    'q': 'wa', 'w': 'qes', 'e': 'wrd', 'r': 'etf', 't': 'ryg',
+    'y': 'tuh', 'u': 'yij', 'i': 'uok', 'o': 'ipl', 'p': 'ol',
+    'a': 'qsz', 's': 'wadxz', 'd': 'sfxce', 'f': 'dgcvr',
+    'g': 'fhvbt', 'h': 'gjbny', 'j': 'hknmu', 'k': 'jlmi',
+    'l': 'kop', 'z': 'asx', 'x': 'zsdc', 'c': 'xdfv',
+    'v': 'cfgb', 'b': 'vghn', 'n': 'bhjm', 'm': 'njk',
+}
+
 # ── Character-level perturbation functions ────────────────────────────────────
 # Each returns a list with one random candidate, matching the paper's approach
 # of generating one perturbation per transformation type and picking the best.

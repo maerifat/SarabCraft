@@ -34,11 +34,19 @@ def _get_sim_model():
 def compute_semantic_similarity(text_a: str, text_b: str) -> float:
     """Compute cosine similarity between two texts using sentence-transformers.
 
-    Returns: float in [-1, 1], higher = more similar. Returns 1.0 if library unavailable.
+    Returns: float in [-1, 1], higher = more similar.
+    
+    CRITICAL: Fails closed (returns 0.0) if model unavailable to prevent
+    silent bypass of semantic constraints.
     """
     model = _get_sim_model()
     if model is None:
-        return 1.0  # Skip check if model unavailable
+        logger.critical(
+            "Semantic similarity model unavailable! "
+            "Install sentence-transformers or disable similarity constraint. "
+            "Failing closed (returning 0.0) to prevent constraint bypass."
+        )
+        return 0.0  # FAIL-CLOSED: reject all candidates if constraint broken
 
     embeddings = model.encode([text_a, text_b], convert_to_tensor=True)
     from torch.nn.functional import cosine_similarity

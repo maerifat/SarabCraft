@@ -126,7 +126,12 @@ TEXT_ATTACK_DISPATCH = {
 
     "TextBugger": lambda w, tok, txt, tgt, p:
         run_textbugger(w, tok, txt, tgt,
-            _p(p, "max_perturbations", 5, int)),
+            _p(p, "max_perturbations", 5, int),
+            str(p.get("mode", "black-box")),
+            str(p.get("strategy", "combined")),
+            _p(p, "similarity_threshold", 0.8),
+            _p(p, "max_queries", 5000, int),
+            seed=p.get("seed", None)),
 
     "HotFlip": lambda w, tok, txt, tgt, p:
         run_hotflip(w, tok, txt, tgt,

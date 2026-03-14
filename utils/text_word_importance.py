@@ -242,7 +242,11 @@ def combined_importance(
 
 
 def gradient_importance(model, tokenizer, text: str, target_index: int = None) -> list[tuple[int, float]]:
-    """Score token importance using gradient L2 norm (white-box).
+    """Score word importance using gradient L2 norm (white-box).
+
+    Computes per-subword-token gradient norms and aggregates them to
+    word-level scores so that returned indices align with the word
+    positions from ``get_words_and_spans(text)``.
 
     Args:
         model: HuggingFace model (requires gradient computation)
@@ -251,13 +255,18 @@ def gradient_importance(model, tokenizer, text: str, target_index: int = None) -
         target_index: class index for gradient computation; if None, uses predicted class
 
     Returns:
-        List of (token_position, importance_score) sorted by importance descending.
-        Positions correspond to tokenizer output positions (not word positions).
+        List of (word_position, importance_score) sorted by importance descending.
+        Positions correspond to whitespace-word indices from get_words_and_spans.
     """
     from models.text_loader import device
 
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
-    inputs = {k: v.to(device) for k, v in inputs.items()}
+    # Tokenize WITH offset mapping so we can align subwords → words
+    tok_out = tokenizer(
+        text, return_tensors="pt", truncation=True, max_length=512,
+        return_offsets_mapping=True,
+    )
+    offset_mapping = tok_out.pop("offset_mapping")[0].tolist()  # list of (start, end)
+    inputs = {k: v.to(device) for k, v in tok_out.items()}
 
     embeddings = model.get_input_embeddings()
     input_ids = inputs["input_ids"]
@@ -275,14 +284,63 @@ def gradient_importance(model, tokenizer, text: str, target_index: int = None) -
     loss = logits[0, target_index]
     loss.backward()
 
-    # L2 norm of gradient for each token position
+    # L2 norm of gradient for each subword token position
     grad = embed_out.grad[0]  # [seq_len, hidden_dim]
-    importance = grad.norm(dim=-1).detach().cpu().tolist()  # [seq_len]
+    token_norms = grad.norm(dim=-1).detach().cpu().tolist()  # [seq_len]
 
-    # Skip [CLS] and [SEP] tokens (first and last)
-    scores = []
-    for i in range(1, len(importance) - 1):
-        scores.append((i, importance[i]))
+    # Build word-level spans from get_words_and_spans
+    words_spans = get_words_and_spans(text)
 
+    # Aggregate subword gradient norms → word-level scores
+    word_scores = [0.0] * len(words_spans)
+    for tok_idx, (char_start, char_end) in enumerate(offset_mapping):
+        if char_start == 0 and char_end == 0:
+            continue  # skip special tokens ([CLS], [SEP], [PAD])
+        # Find which word this subword belongs to
+        for word_idx, (_word, w_start, w_end) in enumerate(words_spans):
+            if char_start >= w_start and char_end <= w_end:
+                word_scores[word_idx] += token_norms[tok_idx]
+                break
+
+    scores = [(i, s) for i, s in enumerate(word_scores)]
     scores.sort(key=lambda x: x[1], reverse=True)
     return scores
+
+
+def sentence_importance(model_wrapper, text: str) -> list[tuple[int, str, float]]:
+    """Score each sentence's importance by removing it and measuring confidence drop.
+
+    Part of the TextBugger black-box algorithm (Li et al., 2018): first rank
+    sentences, then score words within the most important sentence.
+
+    Args:
+        model_wrapper: _TextModelWrapper with .predict() method
+        text: original text (may contain multiple sentences)
+
+    Returns:
+        List of (sentence_index, sentence_text, importance_score) sorted by
+        importance descending.  Returns a single-element list if the text
+        contains only one sentence.
+    """
+    import re
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    sentences = [s for s in sentences if s.strip()]
+
+    if len(sentences) <= 1:
+        return [(0, text, 1.0)]
+
+    orig_label, orig_conf, _ = model_wrapper.predict(text)
+
+    scores = []
+    for i, sent in enumerate(sentences):
+        reduced = " ".join(s for j, s in enumerate(sentences) if j != i).strip()
+        if not reduced:
+            scores.append((i, sent, orig_conf))
+            continue
+        _, conf_after, _ = model_wrapper.predict(reduced)
+        importance = orig_conf - conf_after
+        scores.append((i, sent, importance))
+
+    scores.sort(key=lambda x: x[2], reverse=True)
+    return scores
+
