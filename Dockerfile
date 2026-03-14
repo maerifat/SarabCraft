@@ -17,7 +17,8 @@ WORKDIR /app
 
 # Python deps (heaviest layer — cached unless requirements change)
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    python -m nltk.downloader -d /usr/local/nltk_data wordnet omw-1.4
 
 # Shared library modules (at /app/ so sys.path hacks resolve correctly)
 COPY config.py ./config.py

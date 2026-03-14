@@ -131,16 +131,90 @@ def get_mlm_substitutions(
     return candidates
 
 
-def get_embedding_neighbours(word: str, top_k: int = 50) -> list[str]:
-    """Get embedding-space neighbours.
+# ── Embedding-based nearest neighbours (primary Sub-W method) ─────────────
 
-    Falls back to MLM substitutions when counter-fitted embeddings are unavailable.
-    This is the recommended approach — MLM provides better contextual substitutions
-    than static embeddings in most cases.
+_word_vectors = None
+_word_vectors_loaded = False
+
+
+def _load_word_vectors():
+    """Try to load GloVe / counter-fitted word vectors via gensim.
+
+    Search order:
+      1. Counter-fitted vectors (preferred — same as TextAttack reference)
+      2. GloVe vectors
+      3. Any gensim KeyedVectors file at well-known paths
+
+    Returns the KeyedVectors object or None.
     """
-    # In a full implementation, this would load counter-fitted GloVe embeddings.
-    # We use MLM fallback since it works out of the box without a 300MB download.
+    global _word_vectors, _word_vectors_loaded
+    if _word_vectors_loaded:
+        return _word_vectors
+    _word_vectors_loaded = True
+
+    try:
+        from gensim.models import KeyedVectors
+    except ImportError:
+        logger.info("gensim not installed — embedding neighbours will use MLM fallback")
+        return None
+
+    import os
+    # Well-known paths for pre-trained vectors (user can symlink or download)
+    candidate_paths = [
+        os.path.expanduser("~/.textattack/embedding/paragramcf"),  # TextAttack counter-fitted
+        os.path.expanduser("~/.cache/textattack/paragramcf"),
+        os.path.expanduser("~/.cache/glove/glove.840B.300d.txt"),
+        os.path.expanduser("~/.cache/glove/glove.6B.300d.txt"),
+    ]
+
+    for path in candidate_paths:
+        if os.path.isfile(path):
+            try:
+                logger.info("Loading word vectors from %s", path)
+                _word_vectors = KeyedVectors.load(path, mmap="r")
+                return _word_vectors
+            except Exception:
+                try:
+                    _word_vectors = KeyedVectors.load_word2vec_format(path, binary=False)
+                    return _word_vectors
+                except Exception:
+                    continue
+
+    # NOTE: We do NOT attempt gensim.downloader.api.load() here because
+    # downloading GloVe vectors (~1.7 GB) at runtime would hang the attack.
+    # Users who want embedding-based Sub-W should pre-download vectors to
+    # one of the paths above.
+    logger.info("No local word vectors found — Sub-W will use MLM fallback")
+    return None
+
+
+def get_embedding_neighbours(word: str, top_k: int = 5) -> list[str]:
+    """Get nearest neighbours from word embedding space (paper: GloVe).
+
+    Implements the Sub-W perturbation from TextBugger (Li et al., 2018):
+    replace a word with its top-k nearest neighbours in a pre-trained
+    word vector space.
+
+    Falls back to MLM substitutions when word vectors are unavailable.
+
+    Args:
+        word: target word
+        top_k: number of neighbours to return (paper default: 5)
+
+    Returns:
+        List of substitute words sorted by cosine similarity.
+    """
+    vectors = _load_word_vectors()
+    if vectors is not None:
+        try:
+            neighbours = vectors.most_similar(word.lower(), topn=top_k)
+            # neighbours is list of (word, similarity)
+            return [w for w, _sim in neighbours if w.lower() != word.lower()]
+        except KeyError:
+            logger.debug("'%s' not in word vectors — falling back to MLM", word)
+
+    # Fallback: MLM-based contextual substitutions
     logger.debug("Using MLM fallback for embedding neighbours of '%s'", word)
-    # Build a simple context sentence for decontextualized substitution
     text = f"The {word} is important."
     return get_mlm_substitutions(text, position=1, top_k=top_k)
+
