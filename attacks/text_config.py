@@ -60,17 +60,21 @@ TEXT_ATTACK_REGISTRY = {
         },
     },
     "HotFlip": {
-        "cat": "Character-Level",
+        "cat": "Token-Level (Gradient)",
         "threat": "whitebox",
         "paper": "HotFlip: White-Box Adversarial Examples for Text Classification",
         "authors": "Ebrahimi et al.",
         "year": 2018,
         "arxiv": "1712.06751",
-        "desc": "Gradient-based character flip: computes gradient w.r.t. one-hot character/token "
-                "embeddings and finds the substitution that maximises the directional derivative.",
+        "desc": "White-box gradient-based token substitution via first-order Taylor approximation. "
+                "Beam search (width=10) explores multiple flip paths. Constraints: "
+                "RepeatModification, StopwordModification, MaxWordsPerturbed, "
+                "WordEmbeddingDistance (cosine ≥ 0.8), PartOfSpeech matching.",
         "params": {
             "max_flips": {"type": "int", "default": 5, "min": 1, "max": 20, "step": 1},
-            "beam_width": {"type": "int", "default": 1, "min": 1, "max": 10, "step": 1},
+            "beam_width": {"type": "int", "default": 10, "min": 1, "max": 20, "step": 1},
+            "max_perturbed": {"type": "int", "default": 2, "min": 1, "max": 10, "step": 1},
+            "similarity_threshold": {"type": "float", "default": 0.8, "min": 0.5, "max": 1.0, "step": 0.05},
         },
     },
     "Pruthi2019": {

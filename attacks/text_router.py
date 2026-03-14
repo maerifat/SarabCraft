@@ -136,7 +136,9 @@ TEXT_ATTACK_DISPATCH = {
     "HotFlip": lambda w, tok, txt, tgt, p:
         run_hotflip(w, tok, txt, tgt,
             _p(p, "max_flips", 5, int),
-            _p(p, "beam_width", 1, int)),
+            _p(p, "beam_width", 10, int),
+            _p(p, "max_perturbed", 2, int),
+            _p(p, "similarity_threshold", 0.8)),
 
     "Pruthi2019": lambda w, tok, txt, tgt, p:
         run_pruthi2019(w, tok, txt, tgt,
