@@ -27,9 +27,12 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Gao et al.",
         "year": 2018,
         "arxiv": "1801.04354",
-        "desc": "Scores word importance via delete-one, then applies character perturbations "
-                "(swap adjacent, substitute nearby-key, delete, insert) to top-k important words.",
+        "desc": "Four scoring strategies (Combined, THS, TTS, Replace-1, Random) rank word importance; "
+                "greedily applies character perturbations (swap, substitute, delete, insert) to top-k "
+                "words. Enforces Levenshtein edit distance ε=30. Paper default: Combined scoring.",
         "params": {
+            "scoring_method": {"type": "select", "default": "combined",
+                               "options": ["combined", "temporal", "tail", "replaceone", "random"]},
             "max_candidates": {"type": "int", "default": 5, "min": 1, "max": 20, "step": 1},
             "max_perturbations": {"type": "int", "default": 5, "min": 1, "max": 50, "step": 1},
         },
