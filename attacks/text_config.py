@@ -99,11 +99,13 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Jin et al.",
         "year": 2020,
         "arxiv": "1907.11932",
-        "desc": "Word importance ranking (delete-one) → counter-fitted embedding neighbours "
-                "(BERT-MLM fallback) → filtered by POS match + semantic similarity ≥ threshold.",
+        "desc": "Word importance ranking (delete-one, two-case formula) → counter-fitted embedding "
+                "neighbours (BERT-MLM fallback) → filtered by word-embedding cosine ≥ δ, strict POS "
+                "match, and sentence-level semantic similarity (distilUSE) ≥ threshold.",
         "params": {
             "max_candidates": {"type": "int", "default": 50, "min": 5, "max": 200, "step": 5},
-            "similarity_threshold": {"type": "float", "default": 0.8, "min": 0.5, "max": 1.0, "step": 0.05},
+            "similarity_threshold": {"type": "float", "default": 0.84, "min": 0.5, "max": 1.0, "step": 0.01},
+            "embedding_cos_threshold": {"type": "float", "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05},
             "max_perturbation_ratio": {"type": "float", "default": 0.3, "min": 0.05, "max": 1.0, "step": 0.05},
         },
     },
@@ -114,12 +116,16 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Li et al.",
         "year": 2020,
         "arxiv": "2004.09984",
-        "desc": "Uses BERT masked language model to generate contextually appropriate word "
-                "substitutions. Sub-word aware: aggregates WordPiece tokens before replacement.",
+        "desc": "Feeds ORIGINAL (unmasked) text into BERT MLM and reads predictions at all "
+                "positions simultaneously — core innovation vs BAE. Word importance via [UNK] "
+                "replacement. Sub-word aware: Cartesian product of per-position top-k predictions "
+                "ranked by perplexity for multi-subword words. Official filter_words list (~240 words). "
+                "No inline semantic similarity (official uses post-hoc USE evaluation).",
         "params": {
             "max_candidates": {"type": "int", "default": 48, "min": 5, "max": 200, "step": 5},
-            "similarity_threshold": {"type": "float", "default": 0.8, "min": 0.5, "max": 1.0, "step": 0.05},
             "max_perturbation_ratio": {"type": "float", "default": 0.4, "min": 0.05, "max": 1.0, "step": 0.05},
+            "threshold_pred_score": {"type": "float", "default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05},
+            "use_bpe": {"type": "bool", "default": True},
         },
     },
     "BAE": {

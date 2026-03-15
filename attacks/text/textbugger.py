@@ -150,7 +150,11 @@ def _substitute_nearby_key(word: str) -> str:
     return "".join(chars)
 
 
-def _substitute_word_embedding(word: str, max_candidates: int = 5) -> list[str]:
+from typing import Optional
+
+def _substitute_word_embedding(
+    word: str, max_candidates: int = 5, context_text: Optional[str] = None, position: Optional[int] = None
+) -> list[str]:
     """Bug 5 — Sub-W: replace word with nearest embedding neighbours (paper: GloVe, k=5).
 
     Uses embedding-based nearest neighbours as the primary method, matching the
@@ -161,7 +165,7 @@ def _substitute_word_embedding(word: str, max_candidates: int = 5) -> list[str]:
     from utils.text_word_substitution import get_embedding_neighbours
 
     # Primary: embedding neighbours (GloVe / counter-fitted via gensim)
-    candidates = get_embedding_neighbours(word, top_k=max_candidates)
+    candidates = get_embedding_neighbours(word, top_k=max_candidates, context_text=context_text, position=position)
 
     if candidates:
         return candidates[:max_candidates]
@@ -174,8 +178,11 @@ def _substitute_word_embedding(word: str, max_candidates: int = 5) -> list[str]:
     candidates = get_wordnet_synonyms(word, pos=pos, max_candidates=max_candidates)
 
     if not candidates:
-        text = f"The {word} is important."
-        candidates = get_mlm_substitutions(text, position=1, top_k=max_candidates)
+        if context_text and position is not None:
+            candidates = get_mlm_substitutions(context_text, position=position, top_k=max_candidates)
+        else:
+            text = f"The {word} is important."
+            candidates = get_mlm_substitutions(text, position=1, top_k=max_candidates)
 
     return candidates[:max_candidates]
 
@@ -344,7 +351,9 @@ def run_textbugger(
 
         # Word-level: Sub-W — embedding neighbours (paper: GloVe, k=5)
         if strategy in ["word", "combined"]:
-            synonyms = _substitute_word_embedding(word, max_candidates=5)
+            synonyms = _substitute_word_embedding(
+                word, max_candidates=5, context_text=current_text, position=word_idx
+            )
 
             for synonym in synonyms:
                 current_spans = get_words_and_spans(current_text)
