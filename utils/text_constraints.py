@@ -23,8 +23,8 @@ def _get_sim_model():
 
     try:
         from sentence_transformers import SentenceTransformer
-        logger.info("Loading sentence-transformers model: all-MiniLM-L6-v2")
-        _sim_model = SentenceTransformer("all-MiniLM-L6-v2")
+        logger.info("Loading sentence-transformers model: distiluse-base-multilingual-cased-v1")
+        _sim_model = SentenceTransformer("distiluse-base-multilingual-cased-v1")
         return _sim_model
     except ImportError:
         logger.warning("sentence-transformers not installed; similarity checks disabled")

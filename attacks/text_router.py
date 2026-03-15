@@ -147,14 +147,16 @@ TEXT_ATTACK_DISPATCH = {
     "TextFooler": lambda w, tok, txt, tgt, p:
         run_textfooler(w, tok, txt, tgt,
             _p(p, "max_candidates", 50, int),
-            _p(p, "similarity_threshold", 0.8),
-            _p(p, "max_perturbation_ratio", 0.3)),
+            _p(p, "similarity_threshold", 0.84),
+            _p(p, "max_perturbation_ratio", 0.3),
+            _p(p, "embedding_cos_threshold", 0.5)),
 
     "BERT-Attack": lambda w, tok, txt, tgt, p:
         run_bert_attack(w, tok, txt, tgt,
             _p(p, "max_candidates", 48, int),
-            _p(p, "similarity_threshold", 0.8),
-            _p(p, "max_perturbation_ratio", 0.4)),
+            _p(p, "max_perturbation_ratio", 0.4),
+            _p(p, "threshold_pred_score", 0.0),
+            bool(p.get("use_bpe", True))),
 
     "BAE": lambda w, tok, txt, tgt, p:
         run_bae(w, tok, txt, tgt,

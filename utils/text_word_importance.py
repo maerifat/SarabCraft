@@ -30,6 +30,10 @@ def delete_one_importance(model_wrapper, text: str, original_label: str = None) 
     else:
         _, orig_conf, _ = model_wrapper.predict(text)
 
+    # Get original probability vector for two-case formula
+    orig_probs = model_wrapper.predict_probs(text)
+    _, _, orig_label_idx = model_wrapper.predict(text)
+
     scores = []
     for i, (word, start, end) in enumerate(words_spans):
         if is_stopword(word):
@@ -43,8 +47,22 @@ def delete_one_importance(model_wrapper, text: str, original_label: str = None) 
             scores.append((i, orig_conf))
             continue
 
-        _, conf_after, _ = model_wrapper.predict(reduced)
-        importance = orig_conf - conf_after
+        del_label, _, del_label_idx = model_wrapper.predict(reduced)
+        del_probs = model_wrapper.predict_probs(reduced)
+
+        f_y_x = orig_probs[orig_label_idx] if orig_label_idx < len(orig_probs) else orig_conf
+        f_y_xw = del_probs[orig_label_idx] if orig_label_idx < len(del_probs) else 0.0
+
+        if del_label != original_label:
+            # Two-case formula (Jin et al., 2020):
+            # I(w) = (F_Y(X) - F_Y(X\w)) + (F_Y'(X\w) - F_Y'(X))
+            f_yp_xw = del_probs[del_label_idx] if del_label_idx < len(del_probs) else 0.0
+            f_yp_x = orig_probs[del_label_idx] if del_label_idx < len(orig_probs) else 0.0
+            importance = (f_y_x - f_y_xw) + (f_yp_xw - f_yp_x)
+        else:
+            # Simple confidence drop: I(w) = F_Y(X) - F_Y(X\w)
+            importance = f_y_x - f_y_xw
+
         scores.append((i, importance))
 
     scores.sort(key=lambda x: x[1], reverse=True)
@@ -56,12 +74,23 @@ def unk_importance(
 ) -> list[tuple[int, float]]:
     """Score each word's importance by replacing it with [UNK] and measuring score change.
 
-    Matches the official TextAttack GreedyWordSwapWIR(wir_method="unk") method:
-    preserves sentence structure by substituting a placeholder token rather than
-    deleting the word entirely.
+    Matches the official BERT-Attack ``_get_importance()`` combined formula:
+      - When label does NOT change:  I(w) = F_Y(X) - F_Y(X\\w)
+      - When label changes:
+        I(w) = (F_Y(X) - F_Y(X\\w))
+             + (F_Y'(X\\w) - F_Y'(X))
+        where Y' is the argmax label after replacement.
+
+    This combined formula gives a substantial bonus to words whose removal
+    causes a label flip, matching the official vectorised formula::
+
+        import_score = (orig_prob - leave_1_probs[:, orig_label]
+                       + (leave_1_probs_argmax != orig_label).float()
+                       * (leave_1_probs.max(dim=-1)[0]
+                          - torch.index_select(orig_probs, 0, leave_1_probs_argmax)))
 
     Args:
-        model_wrapper: _TextModelWrapper with .predict() method
+        model_wrapper: _TextModelWrapper with .predict() and .predict_probs()
         text: original text
         unk_token: placeholder token (default "[UNK]")
         original_label: if None, will be determined from model
@@ -74,9 +103,11 @@ def unk_importance(
         return []
 
     if original_label is None:
-        original_label, orig_conf, _ = model_wrapper.predict(text)
+        original_label, orig_conf, orig_label_idx = model_wrapper.predict(text)
     else:
-        _, orig_conf, _ = model_wrapper.predict(text)
+        _, orig_conf, orig_label_idx = model_wrapper.predict(text)
+
+    orig_probs = model_wrapper.predict_probs(text)
 
     scores = []
     for i, (word, start, end) in enumerate(words_spans):
@@ -86,8 +117,22 @@ def unk_importance(
 
         # Replace word with [UNK] to preserve sentence structure
         replaced = text[:start] + unk_token + text[end:]
-        _, conf_after, _ = model_wrapper.predict(replaced)
-        importance = orig_conf - conf_after
+
+        rep_label, _, rep_label_idx = model_wrapper.predict(replaced)
+        rep_probs = model_wrapper.predict_probs(replaced)
+
+        f_y_x = orig_probs[orig_label_idx] if orig_label_idx < len(orig_probs) else orig_conf
+        f_y_xw = rep_probs[orig_label_idx] if orig_label_idx < len(rep_probs) else 0.0
+
+        if rep_label != original_label:
+            # Combined formula: label changed — add bonus
+            f_yp_xw = rep_probs[rep_label_idx] if rep_label_idx < len(rep_probs) else 0.0
+            f_yp_x = orig_probs[rep_label_idx] if rep_label_idx < len(orig_probs) else 0.0
+            importance = (f_y_x - f_y_xw) + (f_yp_xw - f_yp_x)
+        else:
+            # Simple confidence drop
+            importance = f_y_x - f_y_xw
+
         scores.append((i, importance))
 
     scores.sort(key=lambda x: x[1], reverse=True)

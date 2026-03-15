@@ -1,12 +1,15 @@
 """
 TextFooler Attack — Jin et al., 2020 (arXiv:1907.11932)
 
-Black-box word-level attack: ranks word importance by delete-one,
-generates candidates via embedding neighbours / BERT MLM fallback,
-filters by POS match + semantic similarity ≥ threshold.
+Black-box word-level attack: ranks word importance by delete-one
+(two-case formula), generates candidates via counter-fitted embedding
+neighbours (BERT MLM fallback), filters by word-embedding cosine ≥ δ,
+strict POS match, and sentence-level semantic similarity ≥ threshold.
 """
 
 import logging
+
+from models.text_loader import get_label_index
 
 logger = logging.getLogger("textattack.attacks.textfooler")
 
@@ -17,10 +20,11 @@ def run_textfooler(
     text: str,
     target_label: str = None,
     max_candidates: int = 50,
-    similarity_threshold: float = 0.8,
+    similarity_threshold: float = 0.84,
     max_perturbation_ratio: float = 0.3,
+    embedding_cos_threshold: float = 0.5,
 ) -> str:
-    """TextFooler attack.
+    """TextFooler attack (Jin et al., 2020).
 
     Returns: adversarial text (str).
     """
@@ -28,11 +32,11 @@ def run_textfooler(
     from utils.text_utils import (
         get_words_and_spans, replace_word_at, is_stopword, pos_tag_words, clean_word,
     )
-    from utils.text_word_substitution import get_mlm_substitutions
+    from utils.text_word_substitution import get_embedding_neighbours_with_scores
     from utils.text_constraints import compute_semantic_similarity
 
-    logger.info("TextFooler: starting (cands=%d, sim=%.2f, max_pert=%.2f)",
-                max_candidates, similarity_threshold, max_perturbation_ratio)
+    logger.info("TextFooler: starting (cands=%d, sim=%.2f, emb_cos=%.2f, max_pert=%.2f)",
+                max_candidates, similarity_threshold, embedding_cos_threshold, max_perturbation_ratio)
 
     words_spans = get_words_and_spans(text)
     if not words_spans:
@@ -43,9 +47,8 @@ def run_textfooler(
 
     # Get original prediction
     orig_label, orig_conf, _ = model_wrapper.predict(text)
-    orig_pos = pos_tag_words(words)
 
-    # Score word importance
+    # Score word importance (uses two-case formula)
     importance = delete_one_importance(model_wrapper, text, orig_label)
 
     current_text = text
@@ -59,21 +62,31 @@ def run_textfooler(
         if is_stopword(word) or len(clean_word(word)) <= 1:
             continue
 
-        # Get substitution candidates from MLM
-        candidates = get_mlm_substitutions(current_text, word_idx, top_k=max_candidates)
+        # Get substitution candidates from counter-fitted embeddings (MLM fallback)
+        candidates_with_scores = get_embedding_neighbours_with_scores(
+            word, top_k=max_candidates, context_text=current_text, position=word_idx
+        )
 
-        # Filter by POS match
-        if word_idx < len(orig_pos):
-            word_pos = orig_pos[word_idx]
+        # Word-embedding cosine pre-filter (paper: δ ≥ 0.5)
+        candidates_with_scores = [
+            (cand, sim) for cand, sim in candidates_with_scores
+            if sim >= embedding_cos_threshold
+        ]
+
+        # Strict POS filtering — no fallback for mismatches (paper: strict)
+        # Recompute POS tags on current_text words to avoid stale-tag bug
+        current_words = [w for w, _, _ in get_words_and_spans(current_text)]
+        current_pos = pos_tag_words(current_words)
+        if word_idx < len(current_pos):
+            word_pos = current_pos[word_idx]
             filtered = []
-            for cand in candidates:
+            for cand, sim in candidates_with_scores:
                 cand_pos = pos_tag_words([cand])
                 if cand_pos and cand_pos[0] == word_pos:
                     filtered.append(cand)
-                elif len(filtered) < max_candidates // 2:
-                    # Allow some POS mismatches to have enough candidates
-                    filtered.append(cand)
-            candidates = filtered if filtered else candidates[:max_candidates // 2]
+            candidates = filtered
+        else:
+            candidates = [cand for cand, _ in candidates_with_scores]
 
         # Try each candidate, pick best that passes constraints
         best_text = None
@@ -82,7 +95,7 @@ def run_textfooler(
         for cand in candidates:
             candidate_text = replace_word_at(current_text, word_idx, cand)
 
-            # Check semantic similarity (inline constraint)
+            # Check semantic similarity (sentence-level, distilUSE)
             sim = compute_semantic_similarity(text, candidate_text)
             if sim < similarity_threshold:
                 continue
@@ -95,7 +108,6 @@ def run_textfooler(
                     return candidate_text
                 # Pick candidate that increases target confidence most
                 probs = model_wrapper.predict_probs(candidate_text)
-                from models.text_loader import get_label_index
                 target_idx = get_label_index(model_wrapper.model, target_label)
                 if target_idx is not None and target_idx < len(probs):
                     impact = probs[target_idx]
