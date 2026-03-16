@@ -12,6 +12,12 @@
 
 [Quick Start](#quick-start) · [Attacks](#supported-attacks) · [Verification](#transfer-verification) · [Model Management](#model-management) · [Workflows](#typical-workflows) · [Plugins](#plugin-system)
 
+<br/>
+
+**Demonstrating adversarial image attacks in the SarabCraft UI.**
+
+![SarabCraft Image Attack Demo](image-attack.gif)
+
 </div>
 
 ---
