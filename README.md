@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="frontend/public/logo.png" width="200" alt="SarabCraft Logo" />
+
 # SarabCraft
 
 ### Crafting illusions that machines believe.
