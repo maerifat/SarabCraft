@@ -155,8 +155,10 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Ren et al.",
         "year": 2019,
         "arxiv": "1907.06292",
-        "desc": "Probability Weighted Word Saliency: score = ΔP × P(word_saliency). "
-                "Uses WordNet synonyms filtered by POS tag, greedy substitution in descending order.",
+        "desc": "Probability Weighted Word Saliency: H = ΔP × softmax(S), where "
+                "S = P(y|x) − P(y|x\\w). WordNet synonyms filtered by Penn Treebank "
+                "POS whitelist with pre-filter (multi-word, lemma, POS match). "
+                "Greedy substitution in descending H-score order.",
         "params": {
             "max_candidates": {"type": "int", "default": 10, "min": 1, "max": 50, "step": 1},
         },

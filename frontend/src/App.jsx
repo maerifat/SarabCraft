@@ -59,160 +59,168 @@ function App() {
 
   return (
     <ErrorBoundary>
-    <ToastProvider>
-    <ConfirmProvider>
-    <div className="min-h-screen flex bg-[var(--bg-primary)] text-[var(--text-primary)]">
+      <ToastProvider>
+        <ConfirmProvider>
+          <div className="min-h-screen flex bg-[var(--bg-primary)] text-[var(--text-primary)]">
 
-      {/* ── Left Sidebar ─────────────────────────────────────── */}
-      <aside className={`
+            {/* ── Left Sidebar ─────────────────────────────────────── */}
+            <aside className={`
         fixed top-0 left-0 h-screen z-40 flex flex-col
         bg-[#0c0d12] border-r border-slate-800/60
         transition-[width] duration-200 ease-in-out
         ${collapsed ? 'w-[60px]' : 'w-[220px]'}
       `}>
 
-        {/* Logo */}
-        <div className="flex items-center gap-3 px-3 py-2 shrink-0 border-b border-slate-800/40">
-          <img src="/logo.png" alt="SarabCraft" className="w-16 h-16 object-contain shrink-0" />
-          {!collapsed && <span className="text-xl font-bold text-slate-200 whitespace-nowrap">SarabCraft</span>}
-        </div>
-
-        {/* Navigation Groups */}
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 px-2 space-y-4 scrollbar-none">
-          {NAV_GROUPS.map(group => (
-            <div key={group.label}>
-              {!collapsed && (
-                <div className="px-2 mb-1.5">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    {group.label}
+              {/* Logo */}
+              <div className={`flex flex-col items-center justify-center shrink-0 border-b border-slate-800/40 transition-all duration-200 ${collapsed ? 'py-4' : 'p-4 min-h-[160px] gap-2'}`}>
+                <img
+                  src="/logo.png"
+                  alt="SarabCraft Logo"
+                  className={`object-contain shrink-0 transition-all duration-200 ${collapsed ? 'w-10 h-10' : 'w-24 h-24'}`}
+                />
+                {!collapsed && (
+                  <span className="text-xl font-bold text-slate-200 tracking-wide text-center">
+                    SarabCraft
                   </span>
-                </div>
-              )}
-              <div className="space-y-0.5">
-                {group.items.map(item => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={item.end || !item.matchPrefix}
-                    className={({ isActive }) => `
+                )}
+              </div>
+
+              {/* Navigation Groups */}
+              <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 px-2 space-y-4 scrollbar-none">
+                {NAV_GROUPS.map(group => (
+                  <div key={group.label}>
+                    {!collapsed && (
+                      <div className="px-2 mb-1.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                          {group.label}
+                        </span>
+                      </div>
+                    )}
+                    <div className="space-y-0.5">
+                      {group.items.map(item => (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          end={item.end || !item.matchPrefix}
+                          className={({ isActive }) => `
                       group flex items-center gap-2.5 rounded-lg transition-all duration-150
                       ${collapsed ? 'justify-center px-0 py-2.5 mx-auto w-10' : 'px-2.5 py-2'}
                       ${isActive
-                        ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
-                        : 'text-slate-500 hover:text-slate-200 hover:bg-slate-800/40'
-                      }
+                              ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
+                              : 'text-slate-500 hover:text-slate-200 hover:bg-slate-800/40'
+                            }
                     `}
-                    title={collapsed ? item.label : undefined}
-                  >
-                    {({ isActive }) => (
-                      <>
-                        <SidebarIcon d={item.icon} className={`w-[18px] h-[18px] shrink-0 transition-colors ${isActive ? 'text-[var(--accent)]' : 'text-slate-500 group-hover:text-slate-300'}`} />
-                        {!collapsed && (
-                          <span className={`text-[13px] font-medium whitespace-nowrap ${isActive ? 'text-[var(--accent)]' : ''}`}>
-                            {item.label}
-                          </span>
-                        )}
-                        {!collapsed && isActive && (
-                          <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
-                        )}
-                      </>
-                    )}
-                  </NavLink>
+                          title={collapsed ? item.label : undefined}
+                        >
+                          {({ isActive }) => (
+                            <>
+                              <SidebarIcon d={item.icon} className={`w-[18px] h-[18px] shrink-0 transition-colors ${isActive ? 'text-[var(--accent)]' : 'text-slate-500 group-hover:text-slate-300'}`} />
+                              {!collapsed && (
+                                <span className={`text-[13px] font-medium whitespace-nowrap ${isActive ? 'text-[var(--accent)]' : ''}`}>
+                                  {item.label}
+                                </span>
+                              )}
+                              {!collapsed && isActive && (
+                                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+                              )}
+                            </>
+                          )}
+                        </NavLink>
+                      ))}
+                    </div>
+                  </div>
                 ))}
-              </div>
-            </div>
-          ))}
-        </nav>
+              </nav>
 
-        {/* Bottom Section */}
-        <div className="shrink-0 border-t border-slate-800/40 p-2 space-y-0.5">
-          <NavLink
-            to="/settings"
-            className={({ isActive }) => `
+              {/* Bottom Section */}
+              <div className="shrink-0 border-t border-slate-800/40 p-2 space-y-0.5">
+                <NavLink
+                  to="/settings"
+                  className={({ isActive }) => `
               group flex items-center gap-2.5 rounded-lg transition-all duration-150
               ${collapsed ? 'justify-center px-0 py-2.5 mx-auto w-10' : 'px-2.5 py-2'}
               ${isActive
-                ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
-                : 'text-slate-500 hover:text-slate-200 hover:bg-slate-800/40'
-              }
+                      ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
+                      : 'text-slate-500 hover:text-slate-200 hover:bg-slate-800/40'
+                    }
             `}
-            title={collapsed ? 'Settings' : undefined}
-          >
-            <svg className="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            {!collapsed && <span className="text-[13px] font-medium">Settings</span>}
-          </NavLink>
+                  title={collapsed ? 'Settings' : undefined}
+                >
+                  <svg className="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  {!collapsed && <span className="text-[13px] font-medium">Settings</span>}
+                </NavLink>
 
-          <a
-            href="/api/docs"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`
+                <a
+                  href="/api/docs"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`
               group flex items-center gap-2.5 rounded-lg transition-all duration-150
               text-slate-600 hover:text-slate-300 hover:bg-slate-800/40
               ${collapsed ? 'justify-center px-0 py-2.5 mx-auto w-10' : 'px-2.5 py-2'}
             `}
-            title={collapsed ? 'API Docs' : undefined}
-          >
-            <svg className="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
-            </svg>
-            {!collapsed && <span className="text-[13px] font-medium">API Docs</span>}
-          </a>
+                  title={collapsed ? 'API Docs' : undefined}
+                >
+                  <svg className="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
+                  </svg>
+                  {!collapsed && <span className="text-[13px] font-medium">API Docs</span>}
+                </a>
 
-          {/* Collapse Toggle */}
-          <button
-            onClick={() => setCollapsed(c => !c)}
-            className={`
+                {/* Collapse Toggle */}
+                <button
+                  onClick={() => setCollapsed(c => !c)}
+                  className={`
               group flex items-center gap-2.5 rounded-lg transition-all duration-150 w-full
               text-slate-600 hover:text-slate-300 hover:bg-slate-800/40
               ${collapsed ? 'justify-center px-0 py-2.5' : 'px-2.5 py-2'}
             `}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            <svg className={`w-[18px] h-[18px] shrink-0 transition-transform duration-200 ${collapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
-            </svg>
-            {!collapsed && <span className="text-[13px] font-medium">Collapse</span>}
-          </button>
-        </div>
-      </aside>
+                  title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                >
+                  <svg className={`w-[18px] h-[18px] shrink-0 transition-transform duration-200 ${collapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
+                  </svg>
+                  {!collapsed && <span className="text-[13px] font-medium">Collapse</span>}
+                </button>
+              </div>
+            </aside>
 
-      {/* ── Main Content ─────────────────────────────────────── */}
-      <div className={`flex-1 transition-[margin] duration-200 ease-in-out ${collapsed ? 'ml-[60px]' : 'ml-[220px]'}`}>
-        {/* Thin top bar with breadcrumb */}
-        <header className="h-11 border-b border-slate-800/40 bg-[var(--bg-primary)] sticky top-0 z-30 flex items-center px-6">
-          <Breadcrumb path={location.pathname} />
-        </header>
+            {/* ── Main Content ─────────────────────────────────────── */}
+            <div className={`flex-1 transition-[margin] duration-200 ease-in-out ${collapsed ? 'ml-[60px]' : 'ml-[220px]'}`}>
+              {/* Thin top bar with breadcrumb */}
+              <header className="h-11 border-b border-slate-800/40 bg-[var(--bg-primary)] sticky top-0 z-30 flex items-center px-6">
+                <Breadcrumb path={location.pathname} />
+              </header>
 
-        <main className="px-6 py-6 max-w-7xl">
-          <ImageAttackProvider>
-          <Routes>
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/classifier" element={<ClassifierTab />} />
-            <Route path="/image-attack" element={<ImageAttackTab />} />
-            <Route path="/text-attack" element={<TextAttackTab />} />
-            <Route path="/audio" element={<AudioTabs />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/history" element={<HistoryPage />} />
-            <Route path="/batch" element={<BatchAttackPage />} />
-            <Route path="/jobs" element={<JobsPage />} />
-            <Route path="/robustness" element={<RobustnessHub />} />
-            <Route path="/robustness/model" element={<RobustnessHub />} />
-            <Route path="/robustness/attack" element={<RobustnessHub />} />
-            <Route path="/settings" element={<Navigate to="/settings/credentials" replace />} />
-            <Route path="/settings/:tab" element={<SettingsPage />} />
-            <Route path="*" element={<NotFoundPage />} />
-          </Routes>
-          </ImageAttackProvider>
-        </main>
-      </div>
+              <main className="px-6 py-6 max-w-7xl">
+                <ImageAttackProvider>
+                  <Routes>
+                    <Route path="/" element={<LandingPage />} />
+                    <Route path="/classifier" element={<ClassifierTab />} />
+                    <Route path="/image-attack" element={<ImageAttackTab />} />
+                    <Route path="/text-attack" element={<TextAttackTab />} />
+                    <Route path="/audio" element={<AudioTabs />} />
+                    <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/history" element={<HistoryPage />} />
+                    <Route path="/batch" element={<BatchAttackPage />} />
+                    <Route path="/jobs" element={<JobsPage />} />
+                    <Route path="/robustness" element={<RobustnessHub />} />
+                    <Route path="/robustness/model" element={<RobustnessHub />} />
+                    <Route path="/robustness/attack" element={<RobustnessHub />} />
+                    <Route path="/settings" element={<Navigate to="/settings/credentials" replace />} />
+                    <Route path="/settings/:tab" element={<SettingsPage />} />
+                    <Route path="*" element={<NotFoundPage />} />
+                  </Routes>
+                </ImageAttackProvider>
+              </main>
+            </div>
 
-    </div>
-    </ConfirmProvider>
-    </ToastProvider>
+          </div>
+        </ConfirmProvider>
+      </ToastProvider>
     </ErrorBoundary>
   )
 }
