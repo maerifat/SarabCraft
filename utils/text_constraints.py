@@ -54,6 +54,65 @@ def compute_semantic_similarity(text_a: str, text_b: str) -> float:
     return sim.item()
 
 
+def compute_windowed_semantic_similarity(
+    original_text: str,
+    candidate_text: str,
+    word_position: int,
+    threshold: float = 0.8,
+    window_size: int = 15,
+) -> tuple[bool, float]:
+    """Windowed USE similarity matching the official BAE configuration.
+
+    From author email correspondence (documented in TextAttack):
+      1. USE comparison within a window of size 15 around the perturbed word.
+      2. Threshold of 0.1 for inputs shorter than the window size
+         (roughly: always accept short texts).
+      3. Compare against the original text (not incrementally modified text).
+
+    Args:
+        original_text: the unmodified input text
+        candidate_text: the perturbed candidate text
+        word_position: 0-based word index of the perturbation
+        threshold: cosine similarity threshold (default 0.8, paper value)
+        window_size: number of words in the comparison window (default 15)
+
+    Returns:
+        (passes_threshold, similarity_score)
+    """
+    from utils.text_utils import get_words_and_spans
+
+    orig_words = [w for w, _, _ in get_words_and_spans(original_text)]
+
+    # Short text: relaxed threshold of 0.1 (from author correspondence)
+    SHORT_TEXT_THRESHOLD = 0.1
+    if len(orig_words) < window_size:
+        sim = compute_semantic_similarity(original_text, candidate_text)
+        return sim >= SHORT_TEXT_THRESHOLD, sim
+
+    # Extract window centred on perturbed position
+    half = window_size // 2
+    start = max(0, word_position - half)
+    end = start + window_size
+    if end > len(orig_words):
+        end = len(orig_words)
+        start = max(0, end - window_size)
+
+    orig_window = " ".join(orig_words[start:end])
+
+    cand_words = [w for w, _, _ in get_words_and_spans(candidate_text)]
+    # For insertions the candidate may have extra words; use same start
+    # but allow end to stretch by the length difference
+    len_diff = max(0, len(cand_words) - len(orig_words))
+    cand_end = min(len(cand_words), end + len_diff)
+    cand_window = " ".join(cand_words[start:cand_end])
+
+    if not orig_window.strip() or not cand_window.strip():
+        return False, 0.0
+
+    sim = compute_semantic_similarity(orig_window, cand_window)
+    return sim >= threshold, sim
+
+
 class ConstraintChecker:
     """Composite constraint gate used inline during attack search.
 

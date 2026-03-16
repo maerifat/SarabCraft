@@ -136,9 +136,13 @@ TEXT_ATTACK_REGISTRY = {
         "year": 2020,
         "arxiv": "2004.01970",
         "desc": "Four strategies using BERT MLM — Replace (R): mask word and fill, "
-                "Insert (I): insert [MASK] adjacent and fill, combined R+I, and Delete (D).",
+                "Insert (I): insert [MASK] left or right and fill, R/I: pick best "
+                "single operation, R+I: sequential replace then insert. POS filter "
+                "(allow verb↔noun swap), windowed USE similarity (window=15, "
+                "threshold=0.8). Delete (D) is a SarabCraft extension not in the "
+                "original paper.",
         "params": {
-            "strategy": {"type": "select", "default": "R", "options": ["R", "I", "R+I", "D"]},
+            "strategy": {"type": "select", "default": "R", "options": ["R", "I", "R/I", "R+I", "D"]},
             "max_candidates": {"type": "int", "default": 50, "min": 5, "max": 200, "step": 5},
             "similarity_threshold": {"type": "float", "default": 0.8, "min": 0.5, "max": 1.0, "step": 0.05},
             "max_perturbation_ratio": {"type": "float", "default": 0.5, "min": 0.1, "max": 1.0, "step": 0.05},
