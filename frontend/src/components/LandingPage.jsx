@@ -30,7 +30,7 @@ export default function LandingPage() {
             SarabCraft
           </h1>
           <p className="text-sm md:text-base font-semibold text-cyan-300 max-w-2xl mx-auto mb-3">
-            Crafting illusions that machines believe.
+            The Multimodal Adversarial AI Security Framework.
           </p>
           <p className="text-base text-slate-400 max-w-3xl mx-auto mb-10 leading-relaxed">
             SarabCraft helps security teams and researchers craft adversarial images and audio, validate
