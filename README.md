@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Black Hat Arsenal](https://img.shields.io/badge/Black%20Hat-Arsenal%202026-red.svg)](https://www.blackhat.com/arsenal.html)
 
-**SarabCraft is a multimodal adversarial AI research framework for crafting believable image and audio attacks, validating transfer across real targets, and turning the results into evidence security teams can act on.**
+**SarabCraft is a multimodal adversarial AI research framework for crafting believable image, text, and audio attacks, validating transfer across real targets, and turning the results into evidence security teams can act on.**
 
 [Quick Start](#quick-start) · [Attacks](#supported-attacks) · [Verification](#transfer-verification) · [Model Management](#model-management) · [Workflows](#typical-workflows) · [Plugins](#plugin-system)
 
@@ -18,7 +18,7 @@
 
 ## What It Does
 
-SarabCraft gives red teams, defenders, and researchers a single platform to demonstrate, measure, and communicate adversarial failure across image and audio systems.
+SarabCraft gives red teams, defenders, and researchers a single platform to demonstrate, measure, and communicate adversarial failure across image, text, and audio systems.
 
 - **Recreate realistic failure cases** across image models, audio models, language models, and speech systems with 32+ image attacks, 14 text attacks, and 8 audio attack types
 - **Measure more than a label flip** with perturbation metrics, GradCAM overlays, confidence shifts, side-by-side outputs, and transfer results
@@ -214,7 +214,7 @@ This means you can add a custom checkpoint or remote target once, activate the w
 - **Batch Mode** — Run the same attack across multiple inputs and get aggregate success rates
 - **Robustness Comparison** — Run one attack across many models to see what breaks and what holds
 - **Jobs Queue** — Monitor long-running attacks and benchmarks, review event streams, cancel, and resume supported runs
-- **Model Management** — Add, test, duplicate, disable, and organize image/audio models and remote verification targets from the UI
+- **Model Management** — Add, test, duplicate, disable, and organize image, text, and audio models and remote verification targets from the UI
 - **Dashboard** — Track attack success rates, model vulnerability, and transferability heatmaps over time
 - **History** — Search, filter, compare, replay, and export prior experiments
 - **Reports** — Export styled HTML and JSON evidence for papers, demos, and client-facing work
