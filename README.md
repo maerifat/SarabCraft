@@ -2,8 +2,12 @@
 
 <img src="frontend/public/logo.png" width="200" alt="SarabCraft Logo" />
 
-# SarabCraft <br> <sub><span style="font-weight: normal; font-size: 0.6em;"><font color="#8b5cf6"><em>AI Security Framework</em></font></span></sub>
-
+<br>
+<p align="center" style="margin: 0; padding: 0;">
+  <font size="7"><b>SarabCraft</b></font><br>
+  <font size="3" color="#a855f7"><i>AI Security Framework</i></font>
+</p>
+<br>
 Crafting Illusions Machines Believe.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
