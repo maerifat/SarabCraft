@@ -2,7 +2,9 @@
 Faster Alzantot Genetic Algorithm — Jia et al., 2019 (arXiv:1909.00986)
 
 Optimized genetic algorithm 10-20x faster than original Alzantot.
-Uses counter-fitted embeddings for word substitution with language model scoring.
+Uses MLM-based (BERT) word substitutions for faster candidate generation.
+Trades algorithmic compliance for speed (see alzantot_ga.py for the
+compliant implementation).
 """
 
 import random

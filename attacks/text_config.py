@@ -170,12 +170,15 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Alzantot et al.",
         "year": 2018,
         "arxiv": "1804.07998",
-        "desc": "Genetic algorithm: population of perturbed texts → crossover + mutation "
-                "(word substitution) → fitness selection (target confidence). Evolutionary search.",
+        "desc": "Genetic algorithm with counter-fitted embedding neighbours (Paragram), "
+                "softmax fitness-proportional parent selection (T=0.3), uniform crossover, "
+                "best-improvement mutation. Inline constraints: RepeatModification, "
+                "StopwordModification, MaxWordsPerturbed (20%), WordEmbeddingDistance (≥0.5). "
+                "Paper defaults: S=60 population, N=20 generations, δ=0.5.",
         "params": {
-            "population_size": {"type": "int", "default": 20, "min": 5, "max": 100, "step": 5},
-            "max_generations": {"type": "int", "default": 40, "min": 5, "max": 200, "step": 5},
-            "mutation_rate": {"type": "float", "default": 0.3, "min": 0.05, "max": 1.0, "step": 0.05},
+            "population_size": {"type": "int", "default": 60, "min": 5, "max": 200, "step": 5},
+            "max_generations": {"type": "int", "default": 20, "min": 5, "max": 200, "step": 5},
+            "mutation_rate": {"type": "float", "default": 1.0, "min": 0.05, "max": 1.0, "step": 0.05},
             "similarity_threshold": {"type": "float", "default": 0.8, "min": 0.5, "max": 1.0, "step": 0.05},
         },
     },
