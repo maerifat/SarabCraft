@@ -2,8 +2,7 @@
 
 <img src="frontend/public/logo.png" width="200" alt="SarabCraft Logo" />
 
-<h1 style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">SarabCraft</h1>
-<p style="margin-top: 0; font-size: 14px; color: var(--color-fg-muted);"><em>AI Security Framework</em></p>
+# SarabCraft <br> <sub><span style="font-weight: normal; font-size: 0.6em;"><font color="#8b5cf6"><em>AI Security Framework</em></font></span></sub>
 
 Crafting Illusions Machines Believe.
 
