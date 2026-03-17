@@ -1,11 +1,9 @@
 <div align="center">
-
-<img src="frontend/public/logo.png" width="200" alt="SarabCraft Logo" />
-
-# SarabCraft
-<sub><em>AI Security Framework</em></sub>
-
+<img src="frontend/public/logo.png" width="160" /><br/>
+<h1>SarabCraft</h1>
+<sub><em>AI Security Framework</em></sub><br/><br/>
 Crafting Illusions Machines Believe.
+</div>
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
