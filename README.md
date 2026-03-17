@@ -2,9 +2,10 @@
 
 <img src="frontend/public/logo.png" width="200" alt="SarabCraft Logo" />
 
-# SarabCraft
+<h1 style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">SarabCraft</h1>
+<p style="margin-top: 0; font-size: 14px; color: var(--color-fg-muted);"><em>AI Security Framework</em></p>
 
-*The Multimodal Adversarial AI Security Framework.*
+Crafting Illusions Machines Believe.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
