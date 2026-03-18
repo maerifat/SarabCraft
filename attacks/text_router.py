@@ -206,7 +206,9 @@ TEXT_ATTACK_DISPATCH = {
     "Back-Translation": lambda w, tok, txt, tgt, p:
         run_back_translation(w, tok, txt, tgt,
             _p(p, "num_paraphrases", 5, int),
-            _p(p, "similarity_threshold", 0.6)),
+            _p(p, "similarity_threshold", 0.6),
+            _p(p, "chained_back_translation", 0, int),
+            str(p.get("target_lang", "es"))),
 }
 
 

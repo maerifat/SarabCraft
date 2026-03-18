@@ -269,11 +269,17 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Ribeiro et al.",
         "year": 2018,
         "arxiv": "1804.06508",
-        "desc": "Paraphrase via translation round-trip: English → pivot language → English "
-                "using MarianMT. Checks if paraphrased text flips classifier label.",
+        "desc": "Paraphrase via translation round-trip using MarianMT ROMANCE multilingual models "
+                "(opus-mt-en-ROMANCE / opus-mt-ROMANCE-en). Matches TextAttack BackTranslation: "
+                "single pivot (default: Spanish) or chained back-translation through N randomly "
+                "sampled pivot languages for stronger perturbation. Language tag prefix (>>lang<< ) "
+                "for ROMANCE model format. Semantic similarity filtering (distilUSE cosine ≥ threshold).",
         "params": {
             "num_paraphrases": {"type": "int", "default": 5, "min": 1, "max": 20, "step": 1},
             "similarity_threshold": {"type": "float", "default": 0.6, "min": 0.3, "max": 1.0, "step": 0.05},
+            "chained_back_translation": {"type": "int", "default": 0, "min": 0, "max": 10, "step": 1},
+            "target_lang": {"type": "select", "default": "es",
+                            "options": ["es", "fr", "it", "pt", "ro", "ca", "gl"]},
         },
     },
 }
