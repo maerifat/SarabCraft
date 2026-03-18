@@ -209,11 +209,17 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Wang et al.",
         "year": 2019,
         "arxiv": "1909.06723",
-        "desc": "Improved Genetic Algorithm with prioritized word importance ranking and enhanced "
-                "search strategy. More efficient than original Alzantot with better convergence.",
+        "desc": "Improved Genetic Algorithm with three innovations over Alzantot GA: "
+                "(1) population initialized by replacing each word by its optimal synonym, "
+                "(2) max_replace_times_per_index (λ=5) allowing multiple substitutions per "
+                "position with remaining budget as selection weight, (3) single-point "
+                "crossover. Counter-fitted Paragram embeddings (N=50, δ≤0.5), softmax "
+                "fitness-proportional selection (T=0.3), best-improvement mutation. "
+                "Paper defaults: S=60, M=20, λ=5.",
         "params": {
-            "population_size": {"type": "int", "default": 20, "min": 5, "max": 100, "step": 5},
+            "population_size": {"type": "int", "default": 60, "min": 10, "max": 200, "step": 10},
             "max_generations": {"type": "int", "default": 20, "min": 5, "max": 100, "step": 5},
+            "max_replace_times_per_index": {"type": "int", "default": 5, "min": 1, "max": 20, "step": 1},
             "max_perturbation_ratio": {"type": "float", "default": 0.2, "min": 0.05, "max": 1.0, "step": 0.05},
         },
     },
