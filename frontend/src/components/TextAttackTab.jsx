@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { getTextModels, getTextMethods, runTextAttack, createAbortable, cancelJobById } from '../api/client'
 import { Card, SectionLabel, Select, RunButton, ErrorMsg } from './ui/Section'
 import AttackInfoModal from './text/AttackInfoModal'
+import { useTextAttack } from './TextAttackContext'
 
 /* ── Threat-model colours (matches image/audio) ────────────────── */
 const THREAT_COLORS = {
@@ -20,22 +21,26 @@ const LEVEL_COLORS = {
 }
 
 export default function TextAttackTab() {
-  /* ── State ────────────────────────────────────── */
-  const [models, setModels]       = useState([])
+  /* ── Persistent state (survives tab switch) ───── */
+  const {
+    model, setModel,
+    attack, setAttack,
+    text, setText,
+    targetLabel, setTargetLabel,
+    params, setParams,
+    loading, setLoading,
+    error, setError,
+    result, setResult,
+    jobId, setJobId,
+    abortRef,
+  } = useTextAttack()
+
+  /* ── Ephemeral UI state (re-fetched on mount) ── */
+  const [models, setModels]             = useState([])
   const [defaultModel, setDefaultModel] = useState('')
-  const [model, setModel]         = useState('')
-  const [registry, setRegistry]   = useState({})
-  const [attack, setAttack]       = useState('')
-  const [text, setText]           = useState('')
-  const [targetLabel, setTargetLabel] = useState('')
-  const [params, setParams]       = useState({})
-  const [loading, setLoading]     = useState(false)
-  const [error, setError]         = useState('')
-  const [result, setResult]       = useState(null)
-  const [jobId, setJobId]         = useState('')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [infoOpen, setInfoOpen]   = useState(null)
-  const [abortRef]                = useState({ current: null })
+  const [registry, setRegistry]         = useState({})
+  const [searchTerm, setSearchTerm]     = useState('')
+  const [infoOpen, setInfoOpen]         = useState(null)
 
   /* ── Fetch models + methods on mount ──────────── */
   useEffect(() => {
