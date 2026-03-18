@@ -194,8 +194,8 @@ TEXT_ATTACK_DISPATCH = {
 
     "PSO": lambda w, tok, txt, tgt, p:
         run_pso(w, tok, txt, tgt,
-            _p(p, "num_particles", 20, int),
-            _p(p, "max_iterations", 20, int),
+            _p(p, "pop_size", 60, int),
+            _p(p, "max_iters", 20, int),
             _p(p, "max_perturbation_ratio", 0.2)),
 
     "Clare": lambda w, tok, txt, tgt, p:
