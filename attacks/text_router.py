@@ -180,8 +180,10 @@ TEXT_ATTACK_DISPATCH = {
     "Faster Alzantot GA": lambda w, tok, txt, tgt, p:
         run_faster_alzantot_ga(w, tok, txt, tgt,
             _p(p, "population_size", 60, int),
-            _p(p, "max_generations", 20, int),
-            _p(p, "max_perturbation_ratio", 0.2)),
+            _p(p, "max_generations", 40, int),
+            _p(p, "mutation_rate", 1.0),
+            _p(p, "similarity_threshold", 0.8),
+            _p(p, "require_embeddings", False, bool)),
 
     "IGA": lambda w, tok, txt, tgt, p:
         run_iga(w, tok, txt, tgt,

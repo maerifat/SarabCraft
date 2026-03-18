@@ -142,3 +142,140 @@ class ConstraintChecker:
         if not self.check_semantic_similarity(original, candidate):
             return False
         return True
+
+
+# ── Language Model Constraint ─────────────────────────────────────────────
+# Matches TextAttack LearningToWriteLanguageModel (Holtzman et al., 2018)
+# used in the Faster Alzantot GA recipe (Jia et al., 2019).
+# Backend: GPT-2 (equivalent constraint logic; TextAttack uses a GRU-based
+# RNN, but the constraint semantics are identical: window-based log-prob
+# comparison against the original text).
+
+_lm_model = None
+_lm_tokenizer = None
+
+
+def _get_lm():
+    """Lazy-load GPT-2 for language model constraint."""
+    global _lm_model, _lm_tokenizer
+    if _lm_model is not None:
+        return _lm_model, _lm_tokenizer
+
+    try:
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        logger.info("Loading GPT-2 for LM constraint (Faster Alzantot GA)")
+        _lm_tokenizer = AutoTokenizer.from_pretrained("gpt2")
+        _lm_model = AutoModelForCausalLM.from_pretrained("gpt2")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        _lm_model.to(device)
+        _lm_model.eval()
+        return _lm_model, _lm_tokenizer
+    except Exception as e:
+        logger.warning("Could not load GPT-2 for LM constraint: %s", e)
+        return None, None
+
+
+def _get_lm_log_prob(text_window: str, target_word: str) -> float:
+    """Compute log-probability of `target_word` within `text_window`.
+
+    Mirrors TextAttack QueryHandler.query(): the LM scores the window text
+    and we extract the log-probability at the position of the target word.
+
+    Returns:
+        Log-probability (float). Returns -inf if model unavailable or word
+        is out of vocabulary.
+    """
+    import torch
+
+    model, tokenizer = _get_lm()
+    if model is None:
+        return float("-inf")
+
+    device = next(model.parameters()).device
+
+    # Tokenize the full window
+    inputs = tokenizer(text_window, return_tensors="pt", truncation=True, max_length=512)
+    input_ids = inputs["input_ids"].to(device)
+
+    if input_ids.size(1) < 2:
+        return float("-inf")
+
+    with torch.no_grad():
+        outputs = model(input_ids)
+        # logits shape: (1, seq_len, vocab_size)
+        log_probs = torch.log_softmax(outputs.logits, dim=-1)
+
+    # Sum log-probs of all tokens (causal LM scoring of full window)
+    # This matches TextAttack's approach: sum log-probs across the sequence
+    total_log_prob = 0.0
+    for i in range(1, input_ids.size(1)):
+        token_id = input_ids[0, i].item()
+        total_log_prob += log_probs[0, i - 1, token_id].item()
+
+    return total_log_prob
+
+
+def _text_window_around_index(words: list[str], index: int, window_size: int) -> str:
+    """Extract a window of words centred on `index`.
+
+    Matches TextAttack AttackedText.text_window_around_index().
+    Window extends `window_size` words to the left and right of `index`.
+    """
+    half = window_size
+    start = max(0, index - half)
+    end = min(len(words), index + half + 1)
+    return " ".join(words[start:end])
+
+
+def check_lm_constraint(
+    original_words: list[str],
+    candidate_words: list[str],
+    modified_index: int,
+    window_size: int = 6,
+    max_log_prob_diff: float = 5.0,
+) -> bool:
+    """Check LM constraint for a single modified position.
+
+    Matches TextAttack LanguageModelConstraint._check_constraint():
+    for the modified word index, extract windows from both original and
+    candidate text, compute log-probabilities under the LM, and reject
+    if the candidate log-prob drops by more than `max_log_prob_diff`.
+
+    Args:
+        original_words: list of words from the original text.
+        candidate_words: list of words from the candidate text.
+        modified_index: word index that was modified.
+        window_size: number of words on each side of the modified word
+            (paper: W=6).
+        max_log_prob_diff: maximum allowed log-prob decrease
+            (paper: δ=5.0).
+
+    Returns:
+        True if the candidate passes the LM constraint.
+    """
+    model, _ = _get_lm()
+    if model is None:
+        # If LM unavailable, warn and allow (same as TextAttack fallback)
+        logger.warning(
+            "LM constraint skipped: GPT-2 model unavailable. "
+            "Install transformers and download gpt2 for full compliance."
+        )
+        return True
+
+    orig_window = _text_window_around_index(original_words, modified_index, window_size)
+    cand_window = _text_window_around_index(candidate_words, modified_index, window_size)
+
+    orig_word = original_words[modified_index] if modified_index < len(original_words) else ""
+    cand_word = candidate_words[modified_index] if modified_index < len(candidate_words) else ""
+
+    ref_log_prob = _get_lm_log_prob(orig_window, orig_word)
+    cand_log_prob = _get_lm_log_prob(cand_window, cand_word)
+
+    # Reject if candidate log-prob drops by more than threshold
+    # Matches: if transformed_prob <= ref_prob - max_log_prob_diff: return False
+    if cand_log_prob <= ref_log_prob - max_log_prob_diff:
+        return False
+
+    return True

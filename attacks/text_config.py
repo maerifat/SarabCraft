@@ -189,12 +189,17 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Jia et al.",
         "year": 2019,
         "arxiv": "1909.00986",
-        "desc": "Optimized genetic algorithm 10-20x faster than original Alzantot. Uses counter-fitted "
-                "embeddings for word substitution with language model scoring for fluency.",
+        "desc": "Optimized Alzantot GA with three modifications: (1) substitutions "
+                "pre-computed relative to original (RepeatModification), (2) faster "
+                "LM constraint (LearningToWrite, W=6, δ=5.0) compared against original, "
+                "(3) 40 iterations. Counter-fitted Paragram embeddings (N=8, δ≤0.5), "
+                "softmax fitness-proportional selection (T=0.3), uniform crossover, "
+                "best-improvement mutation. Paper defaults: S=60, N=40.",
         "params": {
             "population_size": {"type": "int", "default": 60, "min": 10, "max": 200, "step": 10},
-            "max_generations": {"type": "int", "default": 20, "min": 5, "max": 100, "step": 5},
-            "max_perturbation_ratio": {"type": "float", "default": 0.2, "min": 0.05, "max": 1.0, "step": 0.05},
+            "max_generations": {"type": "int", "default": 40, "min": 5, "max": 200, "step": 5},
+            "mutation_rate": {"type": "float", "default": 1.0, "min": 0.05, "max": 1.0, "step": 0.05},
+            "similarity_threshold": {"type": "float", "default": 0.8, "min": 0.5, "max": 1.0, "step": 0.05},
         },
     },
     "IGA": {
