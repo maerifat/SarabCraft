@@ -15,7 +15,8 @@ AVAILABLE_TEXT_MODELS = {
 
 DEFAULT_TEXT_MODEL = "textattack/bert-base-uncased-SST-2"
 
-# MLM model used for BERT-Attack, BAE, Clare, and as fallback for embedding neighbours
+# MLM model used for BERT-Attack, BAE, and as fallback for embedding neighbours
+# (Clare uses its own distilroberta-base MLM, matching the original paper)
 DEFAULT_MLM_MODEL = "bert-base-uncased"
 
 TEXT_ATTACK_REGISTRY = {
@@ -230,11 +231,15 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Zang et al.",
         "year": 2020,
         "arxiv": "2004.14641",
-        "desc": "Particle Swarm Optimization with sememe-based word substitution. Treats adversarial "
-                "text generation as combinatorial optimization with swarm intelligence search.",
+        "desc": "Particle Swarm Optimization treating adversarial text generation as combinatorial "
+                "optimization. Discrete velocity via equality function (±V_max=3.0), sigmoid turn "
+                "probability, two-phase movement (local/global elite), adaptive ω/C1/C2 schedules, "
+                "mutation via best-improvement neighbour replacement. Paper uses sememe-based "
+                "substitution (HowNet); this implementation uses MLM candidates. "
+                "Paper defaults: pop_size=60, max_iters=20, ω₁=0.8, ω₂=0.2.",
         "params": {
-            "num_particles": {"type": "int", "default": 20, "min": 5, "max": 100, "step": 5},
-            "max_iterations": {"type": "int", "default": 20, "min": 5, "max": 100, "step": 5},
+            "pop_size": {"type": "int", "default": 60, "min": 5, "max": 200, "step": 5},
+            "max_iters": {"type": "int", "default": 20, "min": 5, "max": 100, "step": 5},
             "max_perturbation_ratio": {"type": "float", "default": 0.2, "min": 0.05, "max": 1.0, "step": 0.05},
         },
     },
@@ -247,8 +252,11 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Li et al.",
         "year": 2021,
         "arxiv": "2009.07502",
-        "desc": "Contextual perturbation using BERT MLM for Replace, Insert, and Merge "
-                "operations. Searches all candidates, selects one maximising label change + fluency.",
+        "desc": "Contextual perturbation using distilroberta-base MLM for Replace, Insert, and "
+                "Merge operations. Global greedy search: generates ALL candidates across ALL "
+                "positions and ALL operations per step, selects globally best perturbation. "
+                "POS-based merge eligibility, USE similarity (window=15, threshold=0.7), "
+                "RepeatModification + StopwordModification constraints.",
         "params": {
             "max_perturbations": {"type": "int", "default": 5, "min": 1, "max": 20, "step": 1},
             "similarity_threshold": {"type": "float", "default": 0.7, "min": 0.4, "max": 1.0, "step": 0.05},
