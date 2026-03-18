@@ -187,8 +187,9 @@ TEXT_ATTACK_DISPATCH = {
 
     "IGA": lambda w, tok, txt, tgt, p:
         run_iga(w, tok, txt, tgt,
-            _p(p, "population_size", 20, int),
+            _p(p, "population_size", 60, int),
             _p(p, "max_generations", 20, int),
+            _p(p, "max_replace_times_per_index", 5, int),
             _p(p, "max_perturbation_ratio", 0.2)),
 
     "PSO": lambda w, tok, txt, tgt, p:
