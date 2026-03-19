@@ -137,9 +137,9 @@ Use Docker when you want the full analyst workflow, including long-running jobs,
 | Category | Method | Description |
 |---|---|---|
 | **Character-Level** | DeepWordBug | Scores word importance via delete-one, then applies character perturbations to top-k important words. |
-| | TextBugger | Five character-level perturbations: insert space, delete char, swap adjacent, substitute homoglyph, substitute nearby key. |
 | | HotFlip | Gradient-based character flip: computes gradient w.r.t. one-hot character/token embeddings and finds best substitution. |
 | | Pruthi2019 | Simulates common typos: swap adjacent characters, delete characters, insert characters, and substitute characters. |
+| **Hybrid** | TextBugger | Dual-mode attack with 5 perturbations: insert space, delete char, swap adjacent, substitute homoglyph/typo, and substitute with nearest embedding neighbour. |
 | **Word-Level** | TextFooler | Word importance ranking → counter-fitted embedding neighbours → filtered by POS match + semantic similarity. |
 | | BERT-Attack | Uses BERT masked language model to generate contextually appropriate word substitutions. Sub-word aware. |
 | | BAE | Four strategies using BERT MLM — Replace (R), Insert (I), combined R+I, and Delete (D). |
