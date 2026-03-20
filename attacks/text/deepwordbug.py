@@ -1,11 +1,12 @@
 """
 DeepWordBug Attack — Gao et al., 2018 (arXiv:1801.04354)
 
-Black-box character-level attack.  Fully compliant with the original paper:
+Black-box character-level attack.  Faithful to the original paper and official
+QData/deepWordBug implementation:
   - 5 scoring strategies: combined, temporal (THS), tail (TTS), replaceone, random
-  - 4 transformations: swap adjacent, random-char substitute, delete, insert
-  - Constraints: StopwordModification, RepeatModification, LevenshteinEditDistance(ε=30)
-  - Greedy word-by-word search
+  - 5 transformations: swap, flip (substitute), remove (delete), insert, homoglyph
+  - Attack: score words → rank by importance → apply chosen transformer to top ε words
+  - ε = max_perturbations (number of words to perturb, official: --power)
 """
 
 import random
@@ -13,23 +14,24 @@ import logging
 
 logger = logging.getLogger("textattack.attacks.deepwordbug")
 
-# ── QWERTY keyboard layout for adjacent key substitution ──────────────────────
-KEYBOARD_NEIGHBORS = {
-    'q': 'wa', 'w': 'qes', 'e': 'wrd', 'r': 'etf', 't': 'ryg',
-    'y': 'tuh', 'u': 'yij', 'i': 'uok', 'o': 'ipl', 'p': 'ol',
-    'a': 'qsz', 's': 'wadxz', 'd': 'sfxce', 'f': 'dgcvr',
-    'g': 'fhvbt', 'h': 'gjbny', 'j': 'hknmu', 'k': 'jlmi',
-    'l': 'kop', 'z': 'asx', 'x': 'zsdc', 'c': 'xdfv',
-    'v': 'cfgb', 'b': 'vghn', 'n': 'bhjm', 'm': 'njk',
+# ── Homoglyph mapping ────────────────────────────────────────────────────────
+# Exact mapping from official QData/deepWordBug transformer.py
+HOMOGLYPHS = {
+    '-': '˗', '9': '৭', '8': 'Ȣ', '7': '𝟕', '6': 'б', '5': 'Ƽ',
+    '4': 'Ꮞ', '3': 'Ʒ', '2': 'ᒿ', '1': 'l', '0': 'O', "'": '`',
+    'a': 'ɑ', 'b': 'Ь', 'c': 'ϲ', 'd': 'ԁ', 'e': 'е', 'f': '𝚏',
+    'g': 'ɡ', 'h': 'հ', 'i': 'і', 'j': 'ϳ', 'k': '𝒌', 'l': 'ⅼ',
+    'm': 'ｍ', 'n': 'ո', 'o': 'о', 'p': 'р', 'q': 'ԛ', 'r': 'ⲅ',
+    's': 'ѕ', 't': '𝚝', 'u': 'ս', 'v': 'ѵ', 'w': 'ԝ', 'x': '×',
+    'y': 'у', 'z': 'ᴢ',
 }
 
 # ── Character-level perturbation functions ────────────────────────────────────
-# Each returns a list with one random candidate, matching the paper's approach
-# of generating one perturbation per transformation type and picking the best.
+# Each matches the corresponding function in the official transformer.py.
 
 
 def _swap_adjacent(word: str) -> list[str]:
-    """Swap two random adjacent characters."""
+    """Swap two random adjacent characters.  (official: swap)"""
     if len(word) <= 1:
         return []
     i = random.randint(0, len(word) - 2)
@@ -37,18 +39,25 @@ def _swap_adjacent(word: str) -> list[str]:
     return [candidate]
 
 
-def _substitute_random_char(word: str) -> list[str]:
-    """Replace a random character with a random letter."""
-    if len(word) <= 1:
+def _substitute_char(word: str) -> list[str]:
+    """Replace one random character with a *different* random letter.
+
+    Matches official flip() — avoids replacing with the same character:
+        rletter = randint(0,24)+97; if rletter >= letter: rletter += 1
+    """
+    if not word:
         return []
     i = random.randint(0, len(word) - 1)
-    new_char = random.choice("abcdefghijklmnopqrstuvwxyz")
-    candidate = word[:i] + new_char + word[i + 1:]
+    letter = ord(word[i].lower())
+    rletter = random.randint(0, 24) + 97          # 25 values: a(97)…y(121)
+    if rletter >= letter:
+        rletter += 1                                # skip original letter
+    candidate = word[:i] + chr(rletter) + word[i + 1:]
     return [candidate]
 
 
 def _delete_char(word: str) -> list[str]:
-    """Delete a random character."""
+    """Delete one random character.  (official: remove)"""
     if len(word) <= 1:
         return []
     i = random.randint(0, len(word) - 1)
@@ -57,17 +66,39 @@ def _delete_char(word: str) -> list[str]:
 
 
 def _insert_char(word: str) -> list[str]:
-    """Insert a random character at a random position."""
-    if len(word) <= 1:
-        return []
+    """Insert a random character at a random position.  (official: insert)"""
     i = random.randint(0, len(word))
-    new_char = random.choice("abcdefghijklmnopqrstuvwxyz")
+    new_char = chr(97 + random.randint(0, 25))
     candidate = word[:i] + new_char + word[i:]
     return [candidate]
 
 
-# All four transformations from the paper
-_PERTURBATION_FNS = [_swap_adjacent, _substitute_random_char, _delete_char, _insert_char]
+def _homoglyph(word: str) -> list[str]:
+    """Replace one random character with its Unicode homoglyph.
+
+    Exact mapping from official QData/deepWordBug transformer.py.
+    This is the most effective transformer in the paper.
+    """
+    if not word:
+        return []
+    i = random.randint(0, len(word) - 1)
+    ch = word[i]
+    replacement = HOMOGLYPHS.get(ch, HOMOGLYPHS.get(ch.lower(), ch))
+    candidate = word[:i] + replacement + word[i + 1:]
+    if candidate == word:
+        return []
+    return [candidate]
+
+
+# ── Transformer registry matching the official --transformer flag ─────────────
+
+TRANSFORMER_REGISTRY = {
+    "swap":      _swap_adjacent,
+    "flip":      _substitute_char,
+    "remove":    _delete_char,
+    "insert":    _insert_char,
+    "homoglyph": _homoglyph,
+}
 
 # ── Scoring strategy registry ────────────────────────────────────────────────
 
@@ -75,19 +106,51 @@ SCORING_METHODS = {
     "combined":    "combined_importance",
     "temporal":    "temporal_head_importance",
     "tail":        "temporal_tail_importance",
-    "replaceone":  "unk_importance",
-    "random":      None,  # random ordering, no scoring needed
+    "replaceone":  "_replaceone_importance",
+    "random":      None,
 }
 
 
+def _replaceone_importance(model_wrapper, text: str) -> list[tuple[int, float]]:
+    """Replace-1 score — Gao et al., 2018 (official: scoring.replaceone).
+
+    Replaces each word with [UNK] and measures the confidence drop of the
+    original predicted class.  No label-flip bonus, no stopword filtering —
+    faithful to the official scoring.replaceone() which uses NLL loss.
+
+    Ranking equivalence: official sorts by NLL (higher = more important);
+    we sort by P_drop = P_Y(orig) − P_Y(with_UNK) (higher = more important).
+    Both produce the same word ranking since P_Y(orig) is constant.
+    """
+    from utils.text_utils import get_words_and_spans
+
+    words_spans = get_words_and_spans(text)
+    if not words_spans:
+        return []
+
+    _, _, orig_label_idx = model_wrapper.predict(text)
+    orig_probs = model_wrapper.predict_probs(text)
+    orig_conf = orig_probs[orig_label_idx] if orig_label_idx < len(orig_probs) else 0.0
+
+    scores = []
+    for i, (word, start, end) in enumerate(words_spans):
+        replaced = text[:start] + "[UNK]" + text[end:]
+        rep_probs = model_wrapper.predict_probs(replaced)
+        rep_conf = rep_probs[orig_label_idx] if orig_label_idx < len(rep_probs) else 0.0
+        importance = orig_conf - rep_conf
+        scores.append((i, importance))
+
+    scores.sort(key=lambda x: x[1], reverse=True)
+    return scores
+
+
 def _get_importance(model_wrapper, text: str, scoring_method: str):
-    """Dispatch to the correct scoring function from text_word_importance.
+    """Dispatch to the correct scoring function.
 
     Matches the original paper's --scoring flag:
         combined | temporal | tail | replaceone | random
     """
     from utils.text_word_importance import (
-        unk_importance,
         temporal_head_importance,
         temporal_tail_importance,
         combined_importance,
@@ -103,7 +166,7 @@ def _get_importance(model_wrapper, text: str, scoring_method: str):
     elif method == "tail":
         return temporal_tail_importance(model_wrapper, text)
     elif method == "replaceone":
-        return unk_importance(model_wrapper, text)
+        return _replaceone_importance(model_wrapper, text)
     elif method == "random":
         words_spans = get_words_and_spans(text)
         indices = list(range(len(words_spans)))
@@ -119,133 +182,88 @@ def run_deepwordbug(
     tokenizer,
     text: str,
     target_label: str = None,
-    max_candidates: int = 5,
     max_perturbations: int = 5,
-    max_edit_distance: int = 30,
     scoring_method: str = "combined",
+    transformer: str = "homoglyph",
 ) -> str:
-    """DeepWordBug attack — fully compliant with Gao et al., 2018.
+    """DeepWordBug attack — faithful to Gao et al., 2018.
+
+    Algorithm (matches official QData/deepWordBug attack.py → attackword()):
+      1. Score all words using chosen scoring strategy.
+      2. Rank words by importance (descending).
+      3. Apply chosen transformer to the top ε words.
+      4. Return perturbed text.
 
     Scoring (--scoring flag from original paper):
-      - combined: (THS + TTS) / 2   (default, best in paper)
-      - temporal: Temporal Head Score (prefix-based)
-      - tail: Temporal Tail Score (suffix-based)
-      - replaceone: Replace-1 ([UNK] replacement)
-      - random: random word ordering
+      - combined:   (THS + TTS) / 2   (default, best in paper)
+      - temporal:   Temporal Head Score (prefix-based)
+      - tail:       Temporal Tail Score (suffix-based)
+      - replaceone: Replace-1 ([UNK] replacement, confidence drop)
+      - random:     random word ordering
 
-    Search: Greedy word-by-word
-      1. Rank words by chosen scoring strategy.
-      2. For each word in importance order, generate candidates from all 4
-         character transformations, evaluate them, pick the best.
-      3. Accept if it improves score; return immediately on label flip.
-
-    Constraints:
-      - StopwordModification: skip stopwords
-      - RepeatModification: never modify the same word index twice
-      - LevenshteinEditDistance(ε): total char edit distance ≤ max_edit_distance
+    Transformers (--transformer flag from original paper):
+      - homoglyph: Unicode visual lookalike (default, most effective in paper)
+      - swap:      swap two adjacent characters
+      - flip:      substitute one character with a different random letter
+      - remove:    delete one random character
+      - insert:    insert one random character
 
     Args:
-        model_wrapper: wrapped model with .predict() -> (label, conf, idx)
+        model_wrapper: wrapped model with .predict() → (label, conf, idx)
         tokenizer: HuggingFace tokenizer (unused, kept for API compat)
         text: input text to attack
-        target_label: target class name (None = untargeted)
-        max_candidates: kept for API compat
-        max_perturbations: max number of words to perturb
-        max_edit_distance: Levenshtein ε (default 30, per paper)
+        target_label: target class name (unused, kept for API compat)
+        max_perturbations: ε — number of words to perturb (paper: --power)
         scoring_method: one of "combined", "temporal", "tail", "replaceone", "random"
+        transformer: one of "homoglyph", "swap", "flip", "remove", "insert"
 
     Returns:
         adversarial text (str).
     """
-    from utils.text_utils import get_words_and_spans, replace_word_at, is_stopword
-    from utils.text_metrics import char_edit_distance
+    from utils.text_utils import get_words_and_spans, replace_words_at
 
     logger.info(
-        "DeepWordBug: starting (scoring=%s, max_pert=%d, max_edit_dist=%d)",
-        scoring_method, max_perturbations, max_edit_distance,
+        "DeepWordBug: starting (scoring=%s, transformer=%s, power=%d)",
+        scoring_method, transformer, max_perturbations,
     )
 
     words_spans = get_words_and_spans(text)
     if not words_spans:
         return text
 
-    # ── Word Importance Ranking ──────────────────────────────────────────
+    # Resolve transformer function
+    transform_fn = TRANSFORMER_REGISTRY.get(transformer.lower())
+    if transform_fn is None:
+        logger.warning("Unknown transformer '%s', falling back to 'homoglyph'", transformer)
+        transform_fn = _homoglyph
+
+    # ── Step 1: Score & rank words ───────────────────────────────────────
     importance = _get_importance(model_wrapper, text, scoring_method)
 
-    # Get original prediction
-    orig_label, orig_conf, _ = model_wrapper.predict(text)
-
-    current_text = text
-    perturbations_made = 0
-    modified_indices = set()  # RepeatModification constraint
+    # ── Step 2: Apply transformer to top ε words ─────────────────────────
+    # Matches official attackword(): iterate words in importance order,
+    # apply ONE chosen transformer to each, up to max_perturbations words.
+    # No per-word candidate evaluation, no greedy accept-if-improves.
+    replacements = {}
+    perturbations = 0
 
     for word_idx, score in importance:
-        if perturbations_made >= max_perturbations:
+        if perturbations >= max_perturbations:
             break
-
-        # RepeatModification: skip already-modified words
-        if word_idx in modified_indices:
-            continue
 
         word = words_spans[word_idx][0]
-
-        # StopwordModification: skip stopwords and very short words
-        if is_stopword(word) or len(word) <= 2:
-            continue
-
-        # ── Generate candidates from all 4 transformations ───────────────
-        candidates = []
-        current_spans = get_words_and_spans(current_text)
-        if word_idx >= len(current_spans):
-            break
-        # Guard against stale indices after word-boundary changes
-        current_word = current_spans[word_idx][0]
-        if current_word != word:
-            continue
-
-        for perturb_fn in _PERTURBATION_FNS:
-            perturbed_words = perturb_fn(current_word)
-            for pw in perturbed_words:
-                candidate = replace_word_at(current_text, word_idx, pw)
-
-                # LevenshteinEditDistance constraint
-                if char_edit_distance(text, candidate) > max_edit_distance:
-                    continue
-
-                candidates.append(candidate)
-
+        candidates = transform_fn(word)
         if not candidates:
             continue
 
-        # ── Evaluate all candidates, pick the best ───────────────────────
-        best_text = None
-        best_score = -float("inf")
+        replacements[word_idx] = candidates[0]
+        perturbations += 1
 
-        for candidate in candidates:
-            label, conf, _ = model_wrapper.predict(candidate)
+    # ── Step 3: Apply all replacements, return result ────────────────────
+    if not replacements:
+        logger.info("DeepWordBug: no perturbations applied")
+        return text
 
-            if target_label is not None:
-                # Targeted: want target class confidence to increase
-                if label.lower() == target_label.lower():
-                    logger.info("DeepWordBug: success at perturbation %d", perturbations_made + 1)
-                    return candidate
-                candidate_score = conf if label.lower() == target_label.lower() else -conf
-            else:
-                # Untargeted: want original class confidence to drop
-                if label != orig_label:
-                    logger.info("DeepWordBug: success at perturbation %d", perturbations_made + 1)
-                    return candidate
-                candidate_score = orig_conf - conf
-
-            if candidate_score > best_score:
-                best_score = candidate_score
-                best_text = candidate
-
-        # Accept only if it improves the score (greedy)
-        if best_text is not None and best_score > 0:
-            current_text = best_text
-            perturbations_made += 1
-            modified_indices.add(word_idx)
-
-    logger.info("DeepWordBug: finished (%d perturbations)", perturbations_made)
-    return current_text
+    adversarial = replace_words_at(text, replacements)
+    logger.info("DeepWordBug: finished (%d perturbations)", perturbations)
+    return adversarial

@@ -120,9 +120,9 @@ def _p(params, key, default, cast=float):
 TEXT_ATTACK_DISPATCH = {
     "DeepWordBug": lambda w, tok, txt, tgt, p:
         run_deepwordbug(w, tok, txt, tgt,
-            _p(p, "max_candidates", 5, int),
             _p(p, "max_perturbations", 5, int),
-            scoring_method=str(p.get("scoring_method", "combined"))),
+            str(p.get("scoring_method", "combined")),
+            str(p.get("transformer", "homoglyph"))),
 
     "TextBugger": lambda w, tok, txt, tgt, p:
         run_textbugger(w, tok, txt, tgt,

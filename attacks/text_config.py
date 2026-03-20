@@ -28,13 +28,15 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Gao et al.",
         "year": 2018,
         "arxiv": "1801.04354",
-        "desc": "Four scoring strategies (Combined, THS, TTS, Replace-1, Random) rank word importance; "
-                "greedily applies character perturbations (swap, substitute, delete, insert) to top-k "
-                "words. Enforces Levenshtein edit distance ε=30. Paper default: Combined scoring.",
+        "desc": "Faithful to the original paper and official QData/deepWordBug code. "
+                "Five scoring strategies (Combined, THS, TTS, Replace-1, Random) rank word importance; "
+                "applies the chosen character transformer (homoglyph, swap, flip, remove, insert) to "
+                "the top ε words. Paper defaults: Combined scoring, Homoglyph transformer.",
         "params": {
             "scoring_method": {"type": "select", "default": "combined",
                                "options": ["combined", "temporal", "tail", "replaceone", "random"]},
-            "max_candidates": {"type": "int", "default": 5, "min": 1, "max": 20, "step": 1},
+            "transformer": {"type": "select", "default": "homoglyph",
+                            "options": ["homoglyph", "swap", "flip", "remove", "insert"]},
             "max_perturbations": {"type": "int", "default": 5, "min": 1, "max": 50, "step": 1},
         },
     },
