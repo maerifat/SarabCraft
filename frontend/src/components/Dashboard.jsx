@@ -257,7 +257,7 @@ function EmptyDashboard() {
       </div>
       <h3 className="text-sm font-semibold text-slate-400 mb-2">No Data Yet</h3>
       <p className="text-xs text-slate-600 max-w-xs text-center">
-        Run some attacks to populate the dashboard. Every image and audio attack is automatically tracked and analyzed.
+        Run some attacks to populate the dashboard. Every image, text, and audio attack is automatically tracked and analyzed.
       </p>
     </div>
   )

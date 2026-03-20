@@ -177,6 +177,7 @@ def system_info():
     """System information — GPU availability, loaded models, etc."""
     import torch
     from config import device, ATTACK_REGISTRY
+    from attacks.text_config import TEXT_ATTACK_REGISTRY, AVAILABLE_TEXT_MODELS
     return {
         "device": str(device),
         "cuda_available": torch.cuda.is_available(),
@@ -185,6 +186,8 @@ def system_info():
         "image_attacks": len(ATTACK_REGISTRY),
         "audio_models": len(list_source_models("audio", task="audio_classification")),
         "asr_models": len(list_source_models("audio", task="asr")),
+        "text_models": len(AVAILABLE_TEXT_MODELS),
+        "text_attacks": len(TEXT_ATTACK_REGISTRY),
     }
 
 
