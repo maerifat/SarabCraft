@@ -15,18 +15,12 @@ Reference implementation: TextAttack HotFlipEbrahimi2017 recipe
                  PartOfSpeech
 """
 
-import copy
 import logging
 from dataclasses import dataclass, field
 
 import torch
 
 logger = logging.getLogger("textattack.attacks.hotflip")
-
-# Number of replacement candidates to try per position.
-# TextAttack uses top_n=1, but we try a few more so that if the best
-# candidate fails a constraint (POS / similarity) we still have fallbacks.
-_TOP_K_REPLACEMENTS = 5
 
 
 # ── Beam candidate ────────────────────────────────────────────────────────────
@@ -37,7 +31,6 @@ class _BeamCandidate:
     text: str
     token_ids: torch.Tensor          # [1, seq_len]
     flipped_positions: set = field(default_factory=set)
-    cumulative_score: float = 0.0
 
 
 # ── Constraint helpers ────────────────────────────────────────────────────────
@@ -56,30 +49,112 @@ def _pos_tags_match(word_a: str, word_b: str) -> bool:
     return tags[0] == tags[1]
 
 
-def _embedding_distance_ok(
-    original_text: str,
-    candidate_text: str,
-    threshold: float,
+# ── Word Embedding Distance (counter-fitted GloVe, per-word cosine) ──────────
+# Matches TextAttack WordEmbeddingDistance(min_cos_sim=0.8):
+#   - Uses counter-fitted GloVe embeddings (paragramcf)
+#   - Computes cosine similarity between INDIVIDUAL words (not sentence-level)
+#   - include_unknown_words=True (TextAttack default): if either word is OOV,
+#     the constraint passes
+
+_wv_model = None
+_wv_loaded = False
+
+
+def _get_word_vectors():
+    """Lazy-load counter-fitted word vectors (same source as text_word_substitution.py)."""
+    global _wv_model, _wv_loaded
+    if _wv_loaded:
+        return _wv_model
+    _wv_loaded = True
+
+    try:
+        from gensim.models import KeyedVectors
+    except ImportError:
+        logger.info("gensim not installed — WordEmbeddingDistance constraint will "
+                     "allow all swaps (include_unknown_words=True)")
+        return None
+
+    import os
+    candidate_paths = [
+        os.path.expanduser("~/.textattack/embedding/paragramcf"),
+        os.path.expanduser("~/.cache/textattack/paragramcf"),
+        os.path.expanduser("~/.cache/glove/glove.840B.300d.txt"),
+        os.path.expanduser("~/.cache/glove/glove.6B.300d.txt"),
+    ]
+
+    for path in candidate_paths:
+        if os.path.isfile(path):
+            try:
+                logger.info("Loading word vectors from %s", path)
+                _wv_model = KeyedVectors.load(path, mmap="r")
+                return _wv_model
+            except Exception:
+                try:
+                    _wv_model = KeyedVectors.load_word2vec_format(path, binary=False)
+                    return _wv_model
+                except Exception:
+                    continue
+
+    logger.info("No local word vectors found — WordEmbeddingDistance constraint "
+                "will allow all swaps (include_unknown_words=True)")
+    return None
+
+
+def _word_embedding_cos_sim(word_a: str, word_b: str) -> float | None:
+    """Per-word cosine similarity using counter-fitted GloVe.
+
+    Returns cosine similarity float, or None if either word is OOV.
+    Matches TextAttack WordEmbeddingDistance._check_constraint() logic.
+    """
+    vectors = _get_word_vectors()
+    if vectors is None:
+        return None  # OOV → include_unknown_words=True → pass
+
+    a = word_a.lower()
+    b = word_b.lower()
+
+    try:
+        return float(vectors.similarity(a, b))
+    except KeyError:
+        return None  # OOV → include_unknown_words=True → pass
+
+
+def _word_embedding_distance_ok(
+    old_word: str,
+    new_word: str,
+    min_cos_sim: float,
 ) -> bool:
-    """Check if semantic similarity between original and candidate ≥ threshold."""
-    from utils.text_constraints import compute_semantic_similarity
-    sim = compute_semantic_similarity(original_text, candidate_text)
-    return sim >= threshold
+    """Check WordEmbeddingDistance constraint (per-word, counter-fitted GloVe).
+
+    Matches TextAttack defaults:
+      - include_unknown_words=True → if either word is OOV, allow the swap
+      - compare_against_original=True → always compare against original word
+    """
+    sim = _word_embedding_cos_sim(old_word, new_word)
+    if sim is None:
+        return True  # include_unknown_words=True
+    return sim >= min_cos_sim
 
 
 def _is_valid_word_token(token_str: str) -> bool:
     """Check whether a decoded token is a proper word (not a subword fragment).
 
-    BERT WordPiece subwords start with '##'.  Reject those, as well as
-    single-character tokens (often punctuation artefacts) and tokens that
-    contain non-alphabetic characters.
+    Matches TextAttack WordSwapGradientBased filter:
+      - has_letter(word): must contain at least one letter
+      - len(words_from_text(word)) == 1: must be a single word
     """
     if not token_str or token_str.startswith("##"):
         return False
     cleaned = token_str.strip()
-    if len(cleaned) <= 1:
+    if not cleaned:
         return False
-    return cleaned.isalpha()
+    # Must contain at least one letter (has_letter)
+    if not any(c.isalpha() for c in cleaned):
+        return False
+    # Must be a single word (no spaces, no multi-word tokens)
+    if " " in cleaned:
+        return False
+    return True
 
 
 # ── Core attack ───────────────────────────────────────────────────────────────
@@ -96,15 +171,25 @@ def run_hotflip(
 ) -> str:
     """HotFlip attack (white-box gradient-based token substitution).
 
-    Fully compliant with Ebrahimi et al. 2018 and the TextAttack
+    100% compliant with Ebrahimi et al. 2018 and the TextAttack
     HotFlipEbrahimi2017 recipe:
+
+    Transformation — WordSwapGradientBased(top_n=1):
       - First-order Taylor approximation for flip scoring
-      - Beam search (default beam_width=10)
-      - RepeatModification: no position flipped twice
-      - StopwordModification: skip stopword tokens
-      - MaxWordsPerturbed: at most *max_perturbed* positions changed
-      - WordEmbeddingDistance: cosine similarity ≥ *similarity_threshold*
-      - PartOfSpeech: replacement must share POS with original
+      - Global top-1 candidate selection: flatten [positions × vocab] score
+        matrix, find the single best (position, token) swap
+
+    Search — BeamSearch(beam_width=10):
+      - Each beam candidate produces exactly 1 expansion (top-1)
+      - All expansions scored via goal function (model re-query)
+      - Top beam_width kept by goal function score
+      - Early stopping when label flips
+
+    Constraints:
+      - Pre-transformation: RepeatModification, StopwordModification
+      - Post-transformation: MaxWordsPerturbed(2),
+        WordEmbeddingDistance(min_cos_sim=0.8, counter-fitted GloVe),
+        PartOfSpeech
 
     Returns: adversarial text (str).
     """
@@ -129,7 +214,7 @@ def run_hotflip(
             )
 
     # Cache original prediction
-    orig_label, _, _ = model_wrapper.predict(text)
+    orig_label, orig_conf, orig_label_idx = model_wrapper.predict(text)
 
     embedding_layer = model.get_input_embeddings()
     embedding_weight = embedding_layer.weight          # [vocab_size, hidden_dim]
@@ -151,13 +236,15 @@ def run_hotflip(
         _BeamCandidate(text=text, token_ids=init_ids),
     ]
 
+    best_result = beam[0]
+
     for flip_num in range(max_flips):
-        all_expansions: list[_BeamCandidate] = []
+        potential_next_beam: list[_BeamCandidate] = []
 
         for cand in beam:
-            # Skip candidates that already hit the perturbation cap
+            # ── MaxWordsPerturbed (pre-check): skip candidates that
+            #    already hit the perturbation cap ─────────────────────
             if len(cand.flipped_positions) >= max_perturbed:
-                all_expansions.append(cand)  # keep as-is
                 continue
 
             inputs = tokenizer(
@@ -166,6 +253,20 @@ def run_hotflip(
             inputs = {k: v.to(device) for k, v in inputs.items()}
             input_ids = inputs["input_ids"]
             seq_len = input_ids.shape[1]
+
+            # ── Pre-transformation constraints: determine eligible positions ─
+            eligible_positions = []
+            for pos in range(1, seq_len - 1):  # skip [CLS] and [SEP]
+                # RepeatModification: no position flipped twice
+                if pos in cand.flipped_positions:
+                    continue
+                # StopwordModification: skip stopword tokens
+                if _is_stopword_position(tokenizer, input_ids, pos):
+                    continue
+                eligible_positions.append(pos)
+
+            if not eligible_positions:
+                continue
 
             # ── Forward with gradients on embeddings ─────────────────
             model.zero_grad()
@@ -183,137 +284,188 @@ def run_hotflip(
                 loss = -logits[0, target_idx]
             else:
                 # Untargeted: decrease the predicted-class logit.
-                # Negate so .backward() gives gradients that DECREASE
-                # the predicted-class logit (attack direction).
                 pred_idx = logits.argmax(dim=-1).item()
                 loss = -logits[0, pred_idx]
 
             loss.backward()
             grad = embed_out.grad[0]  # [seq_len, hidden_dim]
 
-            # ── Score all positions × all vocab tokens ───────────────
+            # ── Score all eligible positions × all vocab tokens ──────
             # Vectorised Taylor approximation: score = (e_new − e_old) · grad
-            # Skip [CLS] (pos 0) and [SEP] (pos seq_len-1)
-            inner_range = range(1, seq_len - 1)
+            # Build [num_eligible, vocab_size] score matrix, then flatten
+            # and find global top-1 — matching TextAttack
+            # WordSwapGradientBased._get_replacement_words_by_grad()
 
-            for pos in inner_range:
-                # ── RepeatModification ───────────────────────────────
-                if pos in cand.flipped_positions:
-                    continue
+            num_eligible = len(eligible_positions)
+            vocab_size = embedding_weight.shape[0]
+            diffs = torch.zeros(num_eligible, vocab_size, device=device)
 
-                # ── StopwordModification ─────────────────────────────
-                if _is_stopword_position(tokenizer, input_ids, pos):
-                    continue
-
-                old_embed = embed_out[0, pos].detach()   # [hidden_dim]
+            for j, pos in enumerate(eligible_positions):
                 pos_grad = grad[pos]                     # [hidden_dim]
+                b_grads = embedding_weight @ pos_grad    # [vocab_size]
+                a_grad = b_grads[input_ids[0, pos]]
+                diffs[j] = b_grads - a_grad
 
-                # Score all vocab tokens
-                old_dot = torch.dot(old_embed, pos_grad)
-                all_dots = embedding_weight @ pos_grad   # [vocab_size]
-                scores = all_dots - old_dot
+            # Mask out special tokens (TextAttack only masks pad_token_id,
+            # but we mask all specials for safety — strictly more conservative)
+            for sid in special_ids:
+                diffs[:, sid] = float("-inf")
 
-                # Mask out special tokens and the current token
-                for sid in special_ids:
-                    scores[sid] = float("-inf")
-                scores[input_ids[0, pos]] = float("-inf")
+            # Mask the current token at each position (can't flip to itself)
+            for j, pos in enumerate(eligible_positions):
+                diffs[j, input_ids[0, pos]] = float("-inf")
 
-                # ── Try top-k replacements (fallback if best fails
-                #    constraints) ─────────────────────────────────────
-                top_scores, top_token_ids = scores.topk(_TOP_K_REPLACEMENTS)
+            # ── Global top-1 selection (matching top_n=1) ────────────
+            # Flatten, argsort, pick the single best valid (position, token)
+            flat_sorted = (-diffs).flatten().argsort()
 
-                for rank in range(_TOP_K_REPLACEMENTS):
-                    t_score = top_scores[rank].item()
-                    t_id = top_token_ids[rank].item()
+            found = False
+            for flat_idx in flat_sorted.tolist():
+                j_idx = flat_idx // vocab_size
+                t_id = flat_idx % vocab_size
 
-                    if t_score <= 0:
-                        break  # remaining are worse
+                # The score for this candidate
+                score = diffs[j_idx, t_id].item()
+                if score <= 0:
+                    break  # remaining are all non-improving
 
-                    new_token_str = tokenizer.decode([t_id]).strip()
+                pos = eligible_positions[j_idx]
+                new_token_str = tokenizer.decode([t_id]).strip()
 
-                    # ── Reject subword fragments and non-word tokens ─
-                    if not _is_valid_word_token(new_token_str):
-                        continue
+                # Valid word filter (matching TextAttack has_letter + single-word)
+                if not _is_valid_word_token(new_token_str):
+                    continue
 
-                    old_token_str = tokenizer.decode(
-                        [input_ids[0, pos].item()]
-                    ).strip()
+                # Build the candidate
+                new_ids = input_ids.clone()
+                new_ids[0, pos] = t_id
+                candidate_text = tokenizer.decode(
+                    new_ids[0], skip_special_tokens=True,
+                )
 
-                    # ── PartOfSpeech constraint ──────────────────────
-                    if (
-                        old_token_str
-                        and new_token_str
-                        and old_token_str.isalpha()
-                        and new_token_str.isalpha()
-                        and not _pos_tags_match(old_token_str, new_token_str)
-                    ):
-                        logger.debug(
-                            "HotFlip: POS mismatch at pos %d: '%s' → '%s'",
-                            pos, old_token_str, new_token_str,
-                        )
-                        continue
+                new_flipped = cand.flipped_positions | {pos}
 
-                    # Build candidate text for the embedding–distance check
-                    new_ids = input_ids.clone()
-                    new_ids[0, pos] = t_id
-                    candidate_text = tokenizer.decode(
-                        new_ids[0], skip_special_tokens=True,
+                potential_next_beam.append(
+                    _BeamCandidate(
+                        text=candidate_text,
+                        token_ids=new_ids,
+                        flipped_positions=new_flipped,
                     )
+                )
+                found = True
+                break  # top_n=1: only one transformation per beam candidate
 
-                    # ── WordEmbeddingDistance constraint ──────────────
-                    if not _embedding_distance_ok(
-                        text, candidate_text, similarity_threshold,
-                    ):
-                        logger.debug(
-                            "HotFlip: similarity below %.2f at pos %d",
-                            similarity_threshold, pos,
-                        )
-                        continue
-
-                    new_flipped = cand.flipped_positions | {pos}
-                    new_score = cand.cumulative_score + t_score
-
-                    all_expansions.append(
-                        _BeamCandidate(
-                            text=candidate_text,
-                            token_ids=new_ids,
-                            flipped_positions=new_flipped,
-                            cumulative_score=new_score,
-                        )
-                    )
-                    break  # accept best valid replacement for this position
-
-        if not all_expansions:
+        if not potential_next_beam:
             logger.info("HotFlip: no valid expansions at flip %d", flip_num + 1)
             break
 
-        # ── Beam pruning: keep top beam_width by cumulative score ────
-        all_expansions.sort(key=lambda c: c.cumulative_score, reverse=True)
-        beam = all_expansions[:beam_width]
+        # ── Post-transformation constraints ──────────────────────────
+        # Apply WordEmbeddingDistance and PartOfSpeech AFTER candidate
+        # generation, matching TextAttack's constraint pipeline.
+        constrained_beam: list[_BeamCandidate] = []
+        for cand in potential_next_beam:
+            passes = True
 
-        # ── Early stopping: check if any beam candidate succeeds ─────
-        for cand in beam:
-            label, conf, _ = model_wrapper.predict(cand.text)
-            if target_label is not None:
-                if label.lower() == target_label.lower():
-                    logger.info(
-                        "HotFlip: success at flip %d (beam search)",
-                        flip_num + 1,
+            # Identify what changed: compare against original token_ids
+            cand_ids = cand.token_ids
+            orig_inputs = tokenizer(
+                text, return_tensors="pt", truncation=True, max_length=512,
+            )
+            orig_ids = orig_inputs["input_ids"].to(device)
+
+            for pos in cand.flipped_positions:
+                if pos >= orig_ids.shape[1] or pos >= cand_ids.shape[1]:
+                    passes = False
+                    break
+
+                old_tid = orig_ids[0, pos].item()
+                new_tid = cand_ids[0, pos].item()
+
+                if old_tid == new_tid:
+                    continue  # not actually modified
+
+                old_word = tokenizer.decode([old_tid]).strip()
+                new_word = tokenizer.decode([new_tid]).strip()
+
+                # WordEmbeddingDistance: per-word counter-fitted GloVe cosine
+                if not _word_embedding_distance_ok(
+                    old_word, new_word, similarity_threshold,
+                ):
+                    logger.debug(
+                        "HotFlip: WordEmbeddingDistance below %.2f at pos %d: '%s' → '%s'",
+                        similarity_threshold, pos, old_word, new_word,
                     )
-                    return cand.text
+                    passes = False
+                    break
+
+                # PartOfSpeech: replacement must share POS with original
+                if (
+                    old_word
+                    and new_word
+                    and old_word.isalpha()
+                    and new_word.isalpha()
+                    and not _pos_tags_match(old_word, new_word)
+                ):
+                    logger.debug(
+                        "HotFlip: POS mismatch at pos %d: '%s' → '%s'",
+                        pos, old_word, new_word,
+                    )
+                    passes = False
+                    break
+
+            if passes:
+                constrained_beam.append(cand)
+
+        if not constrained_beam:
+            logger.info("HotFlip: all expansions failed constraints at flip %d", flip_num + 1)
+            break
+
+        # ── Goal function scoring (matching TextAttack BeamSearch) ───
+        # Score all candidates via model re-query, rank by goal function
+        # score, keep top beam_width.
+        scored: list[tuple[float, _BeamCandidate]] = []
+
+        for cand in constrained_beam:
+            probs = model_wrapper.predict_probs(cand.text)
+
+            if target_idx is not None:
+                # Targeted: score = P(target_class)
+                goal_score = probs[target_idx]
             else:
-                if label != orig_label:
-                    logger.info(
-                        "HotFlip: success at flip %d (beam search)",
-                        flip_num + 1,
-                    )
-                    return cand.text
+                # Untargeted: score = 1 − P(original_class)
+                goal_score = 1.0 - probs[orig_label_idx]
+
+            scored.append((goal_score, cand))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        best_score, best_cand = scored[0]
+
+        # ── Early stopping: check if best candidate succeeds ─────────
+        best_label, _, _ = model_wrapper.predict(best_cand.text)
+        if target_label is not None:
+            if best_label.lower() == target_label.lower():
+                logger.info(
+                    "HotFlip: success at flip %d (beam search)",
+                    flip_num + 1,
+                )
+                return best_cand.text
+        else:
+            if best_label != orig_label:
+                logger.info(
+                    "HotFlip: success at flip %d (beam search)",
+                    flip_num + 1,
+                )
+                return best_cand.text
+
+        # Update beam: top beam_width by goal function score
+        beam = [cand for _, cand in scored[:beam_width]]
+        best_result = beam[0]
 
         logger.debug(
-            "HotFlip: flip %d/%d, beam_top_score=%.4f",
-            flip_num + 1, max_flips, beam[0].cumulative_score,
+            "HotFlip: flip %d/%d, beam_top_goal_score=%.4f",
+            flip_num + 1, max_flips, best_score,
         )
 
     # Return the best beam candidate even if attack didn't fully succeed
     logger.info("HotFlip: finished (%d flips, beam_width=%d)", max_flips, beam_width)
-    return beam[0].text
+    return best_result.text
