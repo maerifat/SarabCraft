@@ -69,10 +69,13 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Ebrahimi et al.",
         "year": 2018,
         "arxiv": "1712.06751",
-        "desc": "White-box gradient-based token substitution via first-order Taylor approximation. "
-                "Beam search (width=10) explores multiple flip paths. Constraints: "
-                "RepeatModification, StopwordModification, MaxWordsPerturbed, "
-                "WordEmbeddingDistance (cosine ≥ 0.8), PartOfSpeech matching.",
+        "desc": "100% compliant with TextAttack HotFlipEbrahimi2017 recipe. "
+                "WordSwapGradientBased(top_n=1): first-order Taylor approximation, "
+                "global top-1 (position, token) selection across flattened score matrix. "
+                "BeamSearch(beam_width=10): goal-function scoring via model re-query. "
+                "Constraints: RepeatModification, StopwordModification, "
+                "MaxWordsPerturbed(2), WordEmbeddingDistance(min_cos_sim=0.8, "
+                "counter-fitted GloVe, per-word), PartOfSpeech.",
         "params": {
             "max_flips": {"type": "int", "default": 5, "min": 1, "max": 20, "step": 1},
             "beam_width": {"type": "int", "default": 10, "min": 1, "max": 20, "step": 1},
