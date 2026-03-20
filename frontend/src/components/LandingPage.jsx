@@ -22,7 +22,7 @@ export default function LandingPage() {
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 mb-8">
               <span className={`w-1.5 h-1.5 rounded-full ${sysInfo.cuda_available ? 'bg-emerald-400' : 'bg-amber-400'}`} />
               <span className="text-[11px] text-slate-500">
-                {sysInfo.cuda_available ? sysInfo.gpu_name : 'CPU mode'} - {sysInfo.image_attacks} image attacks, {sysInfo.image_models} image models, {(sysInfo.audio_models || 0) + (sysInfo.asr_models || 0)} audio/ASR models
+                {sysInfo.cuda_available ? sysInfo.gpu_name : 'CPU mode'} - {sysInfo.image_attacks} image attacks, {sysInfo.text_attacks || 13} text attacks, {sysInfo.image_models} image models, {sysInfo.text_models || 5} text models, {(sysInfo.audio_models || 0) + (sysInfo.asr_models || 0)} audio/ASR models
               </span>
             </div>
           )}
@@ -33,7 +33,7 @@ export default function LandingPage() {
             The Multimodal Adversarial AI Security Framework.
           </p>
           <p className="text-base text-slate-400 max-w-3xl mx-auto mb-10 leading-relaxed">
-            SarabCraft helps security teams and researchers craft adversarial images and audio, validate
+            SarabCraft helps security teams and researchers craft adversarial images, text, and audio, validate
             transfer across local and remote targets, onboard custom models from Settings, and keep
             long-running experiments organized with jobs, artifacts, history, and reports.
           </p>
@@ -41,6 +41,10 @@ export default function LandingPage() {
             <button onClick={() => navigate('/image-attack')}
               className="px-7 py-3 bg-white text-slate-900 font-bold rounded-lg hover:bg-slate-100 transition-all text-sm">
               Image Attacks
+            </button>
+            <button onClick={() => navigate('/text-attack')}
+              className="px-7 py-3 bg-slate-800 border border-slate-600 text-slate-200 font-semibold rounded-lg hover:bg-slate-700 transition-all text-sm">
+              Text Attacks
             </button>
             <button onClick={() => navigate('/audio')}
               className="px-7 py-3 bg-slate-800 border border-slate-600 text-slate-200 font-semibold rounded-lg hover:bg-slate-700 transition-all text-sm">
@@ -57,7 +61,7 @@ export default function LandingPage() {
           </div>
           <p className="text-xs text-slate-500 max-w-2xl mx-auto mt-4 leading-relaxed">
             Start in Settings &gt; Models to register custom local checkpoints or remote verification targets,
-            then move into image attacks, audio attacks, jobs, dashboard, and history.
+            then move into image attacks, text attacks, audio attacks, jobs, dashboard, and history.
           </p>
         </div>
       </section>
@@ -74,6 +78,17 @@ export default function LandingPage() {
           ]}
           action="Run Image Attack"
           onClick={() => navigate('/image-attack')}
+        />
+        <CapabilityCard
+          title="Text Attack Research"
+          items={[
+            '13+ text attacks from Character manipulation to Sentence-level paraphrasing',
+            'Evaluate NLP pipelines with implementations faithful to original papers (TextBugger, HotFlip, CLARE, PSO, etc)',
+            'Supports white-box and black-box access, constraint-guided semantic preservation, and GloVe/USE embedding neighbors',
+            'Capture visual token-level difference diffs and comprehensive attack metrics',
+          ]}
+          action="Run Text Attack"
+          onClick={() => navigate('/text-attack')}
         />
         <CapabilityCard
           title="Audio Attack Research"
@@ -121,6 +136,24 @@ export default function LandingPage() {
             { name: 'Black-Box', count: 5, color: 'border-orange-500/30 bg-orange-500/5' },
             { name: 'Physical', count: 2, color: 'border-red-500/30 bg-red-500/5' },
             { name: 'Research', count: 4, color: 'border-amber-500/30 bg-amber-500/5' },
+          ].map(c => (
+            <div key={c.name} className={`rounded-xl p-4 border text-center ${c.color}`}>
+              <div className="text-2xl font-black text-white">{c.count}</div>
+              <div className="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">{c.name}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Text Attack Coverage */}
+      <section>
+        <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500 mb-6 mt-10">Text Attack Coverage</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { name: 'Character-Level', count: 2, color: 'border-cyan-500/30 bg-cyan-500/5' },
+            { name: 'Word-Level', count: 8, color: 'border-purple-500/30 bg-purple-500/5' },
+            { name: 'Sentence-Level', count: 2, color: 'border-emerald-500/30 bg-emerald-500/5' },
+            { name: 'Hybrid', count: 1, color: 'border-orange-500/30 bg-orange-500/5' },
           ].map(c => (
             <div key={c.name} className={`rounded-xl p-4 border text-center ${c.color}`}>
               <div className="text-2xl font-black text-white">{c.count}</div>
