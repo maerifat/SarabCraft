@@ -85,12 +85,11 @@ def _swap_adjacent(word: str) -> str:
 
 
 def _substitute_homoglyph(word: str) -> str:
-    """Bug 4a — Sub-C (homoglyph): replace a character with a visually similar one."""
+    """Sub-C sub-variant: replace a character with a visually similar one."""
     chars = list(word)
-    # Find replaceable positions
     positions = [i for i, c in enumerate(chars) if c.lower() in HOMOGLYPHS]
     if not positions:
-        return _swap_adjacent(word)  # fallback
+        return word  # no substitution possible
     i = random.choice(positions)
     candidates = HOMOGLYPHS[chars[i].lower()]
     chars[i] = random.choice(candidates)
@@ -130,24 +129,41 @@ KEYBOARD_ADJACENT = {
 
 
 def _substitute_nearby_key(word: str) -> str:
-    """Bug 4b — Sub-C (keyboard): replace a character with a keyboard-adjacent one.
+    """Sub-C sub-variant: replace a character with a keyboard-adjacent one.
 
-    Implements keyboard-based typo substitution as explicitly described in the paper:
+    Implements keyboard-based typo substitution as described in the paper:
     'replacing m with n' (adjacent keys on QWERTY layout).
     """
     chars = list(word)
-    # Find replaceable positions (characters with keyboard neighbors)
     positions = [i for i, c in enumerate(chars) if c.lower() in KEYBOARD_ADJACENT]
     if not positions:
-        return _swap_adjacent(word)  # fallback
+        return word  # no substitution possible
     i = random.choice(positions)
     candidates = KEYBOARD_ADJACENT[chars[i].lower()]
-    # Preserve case
     replacement = random.choice(candidates)
     if chars[i].isupper():
         replacement = replacement.upper()
     chars[i] = replacement
     return "".join(chars)
+
+
+def _substitute_c(word: str) -> str:
+    """Bug 4 — Sub-C: substitute with visually similar OR keyboard-adjacent character.
+
+    Paper defines Sub-C as ONE perturbation type with two sub-variants.
+    Randomly picks between homoglyph and keyboard substitution.
+    """
+    if random.random() < 0.5:
+        result = _substitute_homoglyph(word)
+    else:
+        result = _substitute_nearby_key(word)
+    # If the chosen sub-variant couldn't substitute, try the other
+    if result == word:
+        result = _substitute_nearby_key(word) if random.random() < 0.5 else _substitute_homoglyph(word)
+    # Final fallback: swap (graceful degradation)
+    if result == word:
+        result = _swap_adjacent(word)
+    return result
 
 
 from typing import Optional
@@ -187,14 +203,57 @@ def _substitute_word_embedding(
     return candidates[:max_candidates]
 
 
-# Character-level perturbations: Insert, Delete, Swap, Sub-C (homoglyphs + keyboard)
-# Paper defines Sub-C as ONE bug with two sub-variants:
-#   - visually similar characters (homoglyphs)
-#   - keyboard-adjacent characters (typos)
-# Both variants are tried and the best candidate is selected.
+# Character-level perturbations: Insert, Delete, Swap, Sub-C
+# Paper defines exactly 4 character-level bug types.
+# Sub-C randomly picks between homoglyph and keyboard sub-variants.
 _CHARACTER_PERTURBATION_FNS = [
-    _insert_space, _delete_char, _swap_adjacent, _substitute_homoglyph, _substitute_nearby_key,
+    _insert_space, _delete_char, _swap_adjacent, _substitute_c,
 ]
+
+
+def _simple_delete_one_importance(
+    model_wrapper, text: str,
+) -> list[tuple[int, float]]:
+    """TextBugger black-box word importance — paper Algorithm 3.
+
+    CW_i = F_y(x) − F_y(x \\ w_i)
+
+    Simple confidence drop of the TRUE CLASS when word w_i is removed.
+    This is the paper's formula (Li et al., 2018), distinct from the
+    two-case formula used by TextFooler (Jin et al., 2020).
+    """
+    from utils.text_utils import get_words_and_spans, is_stopword
+
+    words_spans = get_words_and_spans(text)
+    if not words_spans:
+        return []
+
+    orig_label, orig_conf, orig_label_idx = model_wrapper.predict(text)
+    orig_probs = model_wrapper.predict_probs(text)
+    f_y_x = orig_probs[orig_label_idx] if orig_label_idx < len(orig_probs) else orig_conf
+
+    scores = []
+    for i, (word, start, end) in enumerate(words_spans):
+        if is_stopword(word):
+            scores.append((i, 0.0))
+            continue
+
+        # Remove word and re-classify
+        reduced = (text[:start] + text[end:]).strip()
+        reduced = " ".join(reduced.split())  # clean up double spaces
+        if not reduced:
+            scores.append((i, f_y_x))
+            continue
+
+        del_probs = model_wrapper.predict_probs(reduced)
+        f_y_xw = del_probs[orig_label_idx] if orig_label_idx < len(del_probs) else 0.0
+
+        # Paper formula: CW_i = F_y(x) - F_y(x \ w_i)
+        importance = f_y_x - f_y_xw
+        scores.append((i, importance))
+
+    scores.sort(key=lambda x: x[1], reverse=True)
+    return scores
 
 
 def run_textbugger(
@@ -242,7 +301,7 @@ def run_textbugger(
     Returns:
         adversarial text (str).
     """
-    from utils.text_word_importance import delete_one_importance, sentence_importance
+    from utils.text_word_importance import sentence_importance
     from utils.text_utils import get_words_and_spans, replace_word_at, is_stopword
 
     # Reproducibility
@@ -268,21 +327,21 @@ def run_textbugger(
             # Multi-sentence: focus on the most important sentence
             top_sent_idx, top_sent_text, _ = sent_scores[0]
             logger.info("TextBugger: black-box sentence importance → sentence %d", top_sent_idx)
-            importance = delete_one_importance(model_wrapper, top_sent_text)
+            importance = _simple_delete_one_importance(model_wrapper, top_sent_text)
             # Offset word indices to match positions in the full text
-            sent_words = get_words_and_spans(top_sent_text)
+            # Use character offset: find where the sentence starts in the full text
+            sent_char_offset = text.find(top_sent_text)
+            if sent_char_offset < 0:
+                sent_char_offset = 0  # fallback: assume start
             full_words = get_words_and_spans(text)
-            # Find where the sentence's words start in the full text
-            offset = 0
-            for i, (fw, fs, fe) in enumerate(full_words):
-                if sent_words and fw == sent_words[0][0] and fs >= full_words[0][1]:
-                    # Check if this is the right sentence by matching spans
-                    if text[fs:fe] == top_sent_text[sent_words[0][1]:sent_words[0][2]]:
-                        offset = i
-                        break
-            importance = [(idx + offset, score) for idx, score in importance]
+            word_offset = 0
+            for i, (_fw, fs, _fe) in enumerate(full_words):
+                if fs >= sent_char_offset:
+                    word_offset = i
+                    break
+            importance = [(idx + word_offset, score) for idx, score in importance]
         else:
-            importance = delete_one_importance(model_wrapper, text)
+            importance = _simple_delete_one_importance(model_wrapper, text)
         logger.info("TextBugger: using black-box delete-one importance")
 
     orig_label, orig_conf, _ = model_wrapper.predict(text)
@@ -303,7 +362,7 @@ def run_textbugger(
             continue
 
         word = words_spans[word_idx][0]
-        if is_stopword(word) or len(word) <= 2:
+        if is_stopword(word):
             continue
 
         # Try each perturbation type, pick the one with greatest impact

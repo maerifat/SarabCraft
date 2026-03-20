@@ -287,11 +287,12 @@ def combined_importance(
 
 
 def gradient_importance(model, tokenizer, text: str, target_index: int = None) -> list[tuple[int, float]]:
-    """Score word importance using gradient L2 norm (white-box).
+    """Score word importance using Jacobian of classifier confidence (white-box).
 
-    Computes per-subword-token gradient norms and aggregates them to
-    word-level scores so that returned indices align with the word
-    positions from ``get_words_and_spans(text)``.
+    Computes J_i = ∂F_y(x)/∂x_i (paper notation) where F_y is the softmax
+    probability for the true class y.  Gradient L2 norms over subword token
+    embeddings are aggregated to word-level scores so that returned indices
+    align with the word positions from ``get_words_and_spans(text)``.
 
     Args:
         model: HuggingFace model (requires gradient computation)
@@ -326,8 +327,10 @@ def gradient_importance(model, tokenizer, text: str, target_index: int = None) -
     if target_index is None:
         target_index = logits.argmax(dim=-1).item()
 
-    loss = logits[0, target_index]
-    loss.backward()
+    # Paper: J_i = ∂F_y(x)/∂x_i — F_y is the softmax probability (confidence)
+    probs = torch.softmax(logits, dim=-1)
+    confidence = probs[0, target_index]
+    confidence.backward()
 
     # L2 norm of gradient for each subword token position
     grad = embed_out.grad[0]  # [seq_len, hidden_dim]
