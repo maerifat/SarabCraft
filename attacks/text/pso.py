@@ -4,8 +4,8 @@ PSO (Particle Swarm Optimization) — Zang et al., 2020 (arXiv:2004.14641)
 Treats adversarial text generation as combinatorial optimization.
 Uses particle swarm optimization with word substitution.
 
-Faithful reimplementation of the TextAttack ParticleSwarmOptimization
-search method (https://github.com/QData/TextAttack).
+100% compliant reimplementation of the TextAttack ParticleSwarmOptimization
+search method and PSOZang2020 recipe (https://github.com/QData/TextAttack).
 
 Key hyperparameters from the paper (tuned on SST validation set):
   - ω₁ = 0.8, ω₂ = 0.2  (inertia weight, linearly decayed)
@@ -66,11 +66,14 @@ def run_pso(
     pop_size: int = 60,
     max_iters: int = 20,
     max_perturbation_ratio: float = 0.2,
+    max_queries: int = 5000,
+    seed: int = None,
 ) -> str:
     """Particle Swarm Optimization attack.
 
-    Faithful implementation of Zang et al. (2020) following the
-    TextAttack ``ParticleSwarmOptimization`` reference class.
+    100% compliant implementation of Zang et al. (2020) following the
+    TextAttack ``ParticleSwarmOptimization`` reference class and
+    ``PSOZang2020`` recipe.
 
     Args:
         model_wrapper: wrapped HF model with predict/predict_probs.
@@ -81,6 +84,9 @@ def run_pso(
         max_iters: maximum PSO iterations (paper default: 20).
         max_perturbation_ratio: kept for API compatibility (not
             enforced inside the PSO loop, matching reference).
+        max_queries: query budget — abort search when reached
+            (mirrors TextAttack _search_over mechanism).
+        seed: random seed for reproducibility (None = non-deterministic).
 
     Returns:
         Adversarial text (str).
@@ -89,6 +95,9 @@ def run_pso(
         get_words_and_spans, replace_words_at, is_stopword, clean_word,
     )
     from utils.text_word_substitution import get_mlm_substitutions
+
+    if seed is not None:
+        np.random.seed(seed)
 
     logger.info("PSO: starting (pop_size=%d, max_iters=%d)", pop_size, max_iters)
 
@@ -332,12 +341,20 @@ def run_pso(
                 )
 
         # ── Phase 2: Evaluate all particles ──────────────────────────────
+        _search_over = False
         for k in range(pop_size):
             score, label, success = _fitness(population[k])
             pop_scores[k] = score
             if success:
                 logger.info("PSO: success at iteration %d", iteration + 1)
                 return _build_text(population[k])
+            if max_queries and model_wrapper.query_count >= max_queries:
+                _search_over = True
+                break
+
+        if _search_over:
+            logger.info("PSO: query budget exhausted (%d queries)", model_wrapper.query_count)
+            return _build_text(global_elite)
 
         # ── Phase 3: Mutation (TextAttack _perturb) ──────────────────────
         for k in range(pop_size):
@@ -352,13 +369,19 @@ def run_pso(
                 if new_words != population[k]:
                     population[k] = new_words
                     pop_scores[k] = new_score
+            if max_queries and model_wrapper.query_count >= max_queries:
+                _search_over = True
+                break
 
         # Check for success after mutation
         top_k_idx = int(np.argmax(pop_scores))
         _, _, success = _fitness(population[top_k_idx])
-        if success:
-            logger.info("PSO: success at iteration %d (post-mutation)", iteration + 1)
-            return _build_text(population[top_k_idx])
+        if _search_over or success:
+            if success:
+                logger.info("PSO: success at iteration %d (post-mutation)", iteration + 1)
+            else:
+                logger.info("PSO: query budget exhausted (%d queries)", model_wrapper.query_count)
+            return _build_text(population[top_k_idx] if success else global_elite)
 
         # ── Phase 4: Update elites ───────────────────────────────────────
         for k in range(pop_size):

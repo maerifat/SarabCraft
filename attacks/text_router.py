@@ -196,7 +196,9 @@ TEXT_ATTACK_DISPATCH = {
         run_pso(w, tok, txt, tgt,
             _p(p, "pop_size", 60, int),
             _p(p, "max_iters", 20, int),
-            _p(p, "max_perturbation_ratio", 0.2)),
+            _p(p, "max_perturbation_ratio", 0.2),
+            _p(p, "max_queries", 5000, int),
+            seed=p.get("seed", None)),
 
     "Clare": lambda w, tok, txt, tgt, p:
         run_clare(w, tok, txt, tgt,
