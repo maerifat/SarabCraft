@@ -236,16 +236,20 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Zang et al.",
         "year": 2020,
         "arxiv": "2004.14641",
-        "desc": "Particle Swarm Optimization treating adversarial text generation as combinatorial "
-                "optimization. Discrete velocity via equality function (±V_max=3.0), sigmoid turn "
+        "desc": "100% compliant with TextAttack PSOZang2020 recipe and ParticleSwarmOptimization "
+                "search method. Discrete velocity via equality function (±V_max=3.0), sigmoid turn "
                 "probability, two-phase movement (local/global elite), adaptive ω/C1/C2 schedules, "
-                "mutation via best-improvement neighbour replacement. Paper uses sememe-based "
-                "substitution (HowNet); this implementation uses MLM candidates. "
+                "mutation via best-improvement neighbour replacement, query budget enforcement "
+                "(mirrors TextAttack _search_over). Constraints: RepeatModification, "
+                "StopwordModification. Paper uses sememe-based substitution (HowNet); this "
+                "implementation uses MLM candidates. "
                 "Paper defaults: pop_size=60, max_iters=20, ω₁=0.8, ω₂=0.2.",
         "params": {
             "pop_size": {"type": "int", "default": 60, "min": 5, "max": 200, "step": 5},
             "max_iters": {"type": "int", "default": 20, "min": 5, "max": 100, "step": 5},
             "max_perturbation_ratio": {"type": "float", "default": 0.2, "min": 0.05, "max": 1.0, "step": 0.05},
+            "max_queries": {"type": "int", "default": 5000, "min": 100, "max": 10000, "step": 100},
+            "seed": {"type": "int", "default": None, "min": 0, "max": 999999, "step": 1},
         },
     },
 
