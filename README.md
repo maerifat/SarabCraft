@@ -17,13 +17,13 @@ Crafting Illusions Machines Believe.
 
 **Demonstrating adversarial image attacks in the SarabCraft UI.**
 
-![SarabCraft Image Attack Demo](image-attack.gif)
+![SarabCraft Image Attack Demo](gif/image-attack.gif)
 
 <br/>
 
 **Demonstrating adversarial text attacks in the SarabCraft UI.**
 
-![SarabCraft Text Attack Demo](text-attack.gif)
+![SarabCraft Text Attack Demo](gif/text-attack.gif)
 
 </div>
 

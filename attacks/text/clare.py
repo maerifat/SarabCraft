@@ -16,6 +16,7 @@ Reference: TextAttack CLARE2020 recipe (textattack.attack_recipes.clare_li_2020)
 """
 
 import logging
+import re
 import string
 
 logger = logging.getLogger("textattack.attacks.clare")
@@ -121,7 +122,7 @@ def _mlm_candidates(masked_text, max_candidates, min_confidence):
             and not _is_punct(word)
         ):
             clean = word.strip("\u0120").strip()
-            if clean:
+            if clean and re.search("[a-zA-Z]", clean):
                 candidates.append(clean)
 
         if len(candidates) >= max_candidates or probs[_id] < min_confidence:
@@ -255,9 +256,12 @@ def run_clare(
         if not eligible:
             break
 
-        # ── POS-eligible merge indices (independent of RepeatModification,
-        #    matching TextAttack WordMergeMaskedLM behaviour) ──────────
-        merge_indices = _find_merge_indices(words)
+        # ── POS-eligible merge indices, filtered by RepeatModification
+        #    and StopwordModification (matching TextAttack behaviour) ───
+        merge_indices = [
+            i for i in _find_merge_indices(words)
+            if i not in modified_indices and not is_stopword(words[i])
+        ]
 
         # ── Generate ALL candidates ──────────────────────────────────
         all_cands: list[tuple[str, str, int]] = []   # (text, op, idx)
