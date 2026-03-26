@@ -71,10 +71,10 @@ export default function LandingPage() {
         <CapabilityCard
           title="Image Attack Research"
           items={[
-            '32+ image attacks across gradient, optimization, black-box, physical, and research workflows',
-            'Targeted and transfer-oriented studies, including SarabCraft R1',
-            'Run against built-in or custom local image models from Settings > Models',
-            'Capture perturbation metrics and visual outputs for every run',
+            '61 image attacks across gradient, transfer, optimization, black-box, physical, and research categories',
+            '28 transfer-optimized methods (SSA, Admix, BSR, FIA, NAA, TGR, LinBP, SGM, SIA, S4ST, CWA, SASD, and more)',
+            'Targeted studies including SarabCraft R1, and ensemble evaluation with AutoAttack',
+            'Run against 30+ built-in or custom models with perturbation metrics, GradCAM, and visual outputs',
           ]}
           action="Run Image Attack"
           onClick={() => navigate('/image-attack')}
@@ -82,10 +82,10 @@ export default function LandingPage() {
         <CapabilityCard
           title="Text Attack Research"
           items={[
-            '13+ text attacks from Character manipulation to Sentence-level paraphrasing',
+            '14 text attacks from character-level manipulation to sentence-level paraphrasing',
             'Evaluate NLP pipelines with implementations faithful to original papers (TextBugger, HotFlip, CLARE, PSO, etc)',
             'Supports white-box and black-box access, constraint-guided semantic preservation, and GloVe/USE embedding neighbors',
-            'Capture visual token-level difference diffs and comprehensive attack metrics',
+            'Capture visual token-level diffs and comprehensive attack metrics',
           ]}
           action="Run Text Attack"
           onClick={() => navigate('/text-attack')}
@@ -128,14 +128,15 @@ export default function LandingPage() {
       {/* Attack surface */}
       <section>
         <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500 mb-6">Image Attack Coverage</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
           {[
-            { name: 'Gradient-Based', count: 14, color: 'border-cyan-500/30 bg-cyan-500/5' },
+            { name: 'Gradient', count: 13, color: 'border-cyan-500/30 bg-cyan-500/5' },
             { name: 'Optimization', count: 6, color: 'border-purple-500/30 bg-purple-500/5' },
-            { name: 'Transfer', count: 5, color: 'border-emerald-500/30 bg-emerald-500/5' },
+            { name: 'Transfer', count: 28, color: 'border-emerald-500/30 bg-emerald-500/5' },
             { name: 'Black-Box', count: 5, color: 'border-orange-500/30 bg-orange-500/5' },
             { name: 'Physical', count: 2, color: 'border-red-500/30 bg-red-500/5' },
-            { name: 'Research', count: 4, color: 'border-amber-500/30 bg-amber-500/5' },
+            { name: 'Meta', count: 1, color: 'border-indigo-500/30 bg-indigo-500/5' },
+            { name: 'Research', count: 1, color: 'border-amber-500/30 bg-amber-500/5' },
           ].map(c => (
             <div key={c.name} className={`rounded-xl p-4 border text-center ${c.color}`}>
               <div className="text-2xl font-black text-white">{c.count}</div>
@@ -150,7 +151,7 @@ export default function LandingPage() {
         <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500 mb-6 mt-10">Text Attack Coverage</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { name: 'Character-Level', count: 2, color: 'border-cyan-500/30 bg-cyan-500/5' },
+            { name: 'Character-Level', count: 3, color: 'border-cyan-500/30 bg-cyan-500/5' },
             { name: 'Word-Level', count: 8, color: 'border-purple-500/30 bg-purple-500/5' },
             { name: 'Sentence-Level', count: 2, color: 'border-emerald-500/30 bg-emerald-500/5' },
             { name: 'Hybrid', count: 1, color: 'border-orange-500/30 bg-orange-500/5' },

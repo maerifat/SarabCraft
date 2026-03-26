@@ -51,7 +51,7 @@ services:
     image: sarabcraft
     container_name: sarabcraft-worker
     build: .
-    command: ["python", "-m", "mlsec_app_new.backend.jobs.worker"]
+    command: ["python", "-m", "backend.jobs.worker"]
     depends_on:
       sarabcraft-postgres:
         condition: service_healthy

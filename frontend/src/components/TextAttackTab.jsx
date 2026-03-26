@@ -5,13 +5,7 @@ import { Card, SectionLabel, Select, RunButton, ErrorMsg } from './ui/Section'
 import AttackInfoModal from './text/AttackInfoModal'
 import { useTextAttack } from './TextAttackContext'
 
-/* ── Threat-model colours (matches image/audio) ────────────────── */
-const THREAT_COLORS = {
-  blackbox: 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10',
-  whitebox: 'border-purple-500/40 text-purple-400 bg-purple-500/10',
-  score:    'border-amber-500/40  text-amber-400  bg-amber-500/10',
-}
-const THREAT_LABEL = { blackbox: 'Black-box', whitebox: 'White-box', score: 'Score-based' }
+import { THREAT_COLORS, THREAT_LABEL } from '../constants/threat'
 
 /* ── Category level colours ────────────────────────────────────── */
 const LEVEL_COLORS = {

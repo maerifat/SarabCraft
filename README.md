@@ -33,7 +33,7 @@ Crafting Illusions Machines Believe.
 
 SarabCraft gives red teams, defenders, and researchers a single platform to demonstrate, measure, and communicate adversarial failure across image, text, and audio systems.
 
-- **Recreate realistic failure cases** across image models, audio models, language models, and speech systems with 32+ image attacks, 14 text attacks, and 8 audio attack types
+- **Recreate realistic failure cases** across image models, audio models, language models, and speech systems with 61 image attacks, 14 text attacks, and 8 audio attack types
 - **Measure more than a label flip** with perturbation metrics, GradCAM overlays, confidence shifts, side-by-side outputs, and transfer results
 - **Prove transfer risk across real targets** including cloud APIs, local models, and custom plugins rather than stopping at a single lab checkpoint
 - **Bring custom models and targets into the workflow** from the UI so teams can test the systems they actually care about
@@ -93,7 +93,7 @@ Use Docker when you want the full analyst workflow, including long-running jobs,
 
 ## Supported Attacks
 
-### Image (32+ methods)
+### Image (61 methods)
 
 | Category | Method | Description |
 |---|---|---|
@@ -119,8 +119,36 @@ Use Docker when you want the full analyst workflow, including long-running jobs,
 | **Transfer** | SSA | Spectrum Simulation Attack: augments in DCT frequency domain to prevent model-specific overfitting. |
 | | Admix | Mixes random images into input during attack to prevent overfitting to source model. |
 | | BSR | Block Shuffle & Rotation: randomly shuffles and rotates image blocks for transfer robustness. |
-| | CFM (CVPR 2023) | CFM + RDI + MI + TI + Logit Loss. Strongest single-model transfer baseline prior to PHANTOM. |
+| | EMI-FGSM | Enhanced Momentum: samples along linear interpolation path between iterations. |
+| | PGN | Penalizing Gradient Norm: seeks flat loss maxima that generalise across models. |
+| | RAP | Reverse Adversarial Perturbation: bi-level optimization for worst-case neighbourhood robustness. |
+| | SMI-FGSM | Spatial Momentum: block-wise independent momentum for spatial diversity. |
+| | GNP | Gradient Norm Penalty: drives optimization toward flat loss regions via gradient norm regularization. |
+| | DRA | Direction-Aggregated Attack: cosine-weighted gradient aggregation from multiple augmented views. |
+| | CFM Paper | CFM + RDI + MI + TI + Logit Loss. Strongest single-model transfer baseline (CVPR 2023). |
 | | TA-Bench | UN+PI+DI+TI+NI+MI — strongest composite baseline from the Transfer-Attack Benchmark. |
+| **Input-Transform** | SIA | Structure Invariant Attack: block-wise affine transforms preserving spatial structure. |
+| | S4ST | Strong Scale & Shift Transform: combined scale, block shift, and random flip. |
+| | RDIM | Resized Diverse Inputs: random resize and crop/pad averaged over multiple copies. |
+| | StAdv | Spatially Transformed Adversarial: flow-field deformations instead of pixel perturbations. |
+| **Feature-Level** | FIA | Feature Importance-Aware: dropout-based feature importance weighting during MI-FGSM. |
+| | NAA | Neuron Attribution Attack: path-integrated attribution to guide gradient computation. |
+| | ILA | Intermediate Level Attack: two-stage — MI-FGSM then maximise intermediate feature projection. |
+| | ILPD | Intermediate-Level Perturbation Decay: progressive relaxation of feature-level penalty. |
+| **ViT / Attention** | TGR | Token Gradient Regularization: normalises per-token gradients in ViT backprop. |
+| | PNA | Pay No Attention: skips attention gradients + PatchOut input diversity. |
+| | SU | Self-Universality: cosine alignment between full-image and crop features. |
+| | DA | Dilated Attention: multi-layer dynamic augmentation with attention-like loss. |
+| **Backward-Prop** | LinBP | Linear Backpropagation: linearises activation backward pass for gradient preservation. |
+| | SGM | Skip Gradient Method: scales residual-block gradients to emphasise skip connections. |
+| **Integrated-Grad** | MIG | Momentum Integrated Gradients: path-integrated gradient combined with momentum. |
+| | IG-FGSM | Integrated Gradients FGSM: sums gradients along interpolation path from black baseline. |
+| **Loss Design** | Logit Loss | Direct logit maximization instead of cross-entropy. Better gradient signal for transfer. |
+| | Logit Calibration | Temperature-scaled cross-entropy with optional margin boost. |
+| | Po+Trip | Poincaré + Triplet: hyperbolic feature space with triplet-style loss. |
+| **Ensemble / Augment** | Ghost Networks | Dense dropout erosion across multiple ghost copies per iteration. |
+| | CWA | Common Weakness Attack: flatness penalty via variance of loss across noisy model augmentations. |
+| **Defense-Aware** | SASD | Sharpness-Aware Self-Distillation: SAM perturbation + KL self-distillation for robust transfer. |
 | **Black-Box** | Square Attack | Score-based random search with square-shaped colour patches. NO gradients needed. Query-efficient. |
 | | SPSA | Estimates gradients via random perturbation pairs. Works with only model output probabilities. |
 | | One Pixel | Differential evolution to find best 1-10 pixels to change. Famous L0 attack. No gradients. |
@@ -128,8 +156,8 @@ Use Docker when you want the full analyst workflow, including long-running jobs,
 | | HopSkipJump | Improved boundary attack with gradient estimation via binary search + Monte Carlo sampling. |
 | **Physical** | Adversarial Patch | Optimises a small patch that causes misclassification when placed on any image. Works physically. |
 | | UAP | Universal Adversarial Perturbation: single image-agnostic noise that fools the model on most inputs. |
-| **Research** | SarabCraft R1 | SarabCraft's first in-house transfer-focused image attack with standard and multi-image transfer modes. |
-| **Ensemble** | AutoAttack | Ensemble of APGD-CE, APGD-DLR, FAB, and Square. Parameter-free robustness evaluation. |
+| **Meta** | AutoAttack | Ensemble of APGD-CE, APGD-DLR, FAB, and Square. Parameter-free robustness evaluation. |
+| **Research** | SarabCraft R1 | SarabCraft's first in-house transfer-focused image attack with standard and multi-image modes. |
 
 ### SarabCraft Research
 
