@@ -29,15 +29,13 @@ COPY verification/ ./verification/
 COPY lab/ ./lab/
 COPY plugins/ ./plugins/
 
-# Backend → /app/mlsec_app_new/backend/
-COPY backend/ ./mlsec_app_new/backend/
-
-# Built frontend → /app/mlsec_app_new/frontend/dist/
-COPY --from=frontend-build /build/dist/ ./mlsec_app_new/frontend/dist/
+# Backend & frontend at /app/ — flat layout matching the repo structure
+COPY backend/ ./backend/
+COPY --from=frontend-build /build/dist/ ./frontend/dist/
 
 ENV PYTHONUNBUFFERED=1 \
     HF_HUB_DISABLE_TELEMETRY=1
 
 EXPOSE 8000
 
-CMD ["uvicorn", "mlsec_app_new.backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

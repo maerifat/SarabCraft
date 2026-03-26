@@ -324,6 +324,351 @@ ATTACK_REGISTRY = {
             "rotation_range": {"label": "Rotation (°)", "min": 0, "max": 45, "step": 5, "default": 10},
         },
     },
+    "EMI-FGSM": {
+        "cat": "Transfer", "threat": "both", "year": 2021, "norm": "L∞",
+        "authors": "Wang et al. (BMVC 2021)",
+        "desc": "Enhanced Momentum FGSM: averages gradients along the path between previous and current perturbation via linear interpolation sampling, stabilising momentum for better transfer.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "n_sample": {"label": "Path samples", "min": 3, "max": 21, "step": 2, "default": 11},
+            "sampling_range": {"label": "Sampling range", "min": 0.1, "max": 1.0, "step": 0.1, "default": 0.3},
+        },
+    },
+    "PGN": {
+        "cat": "Transfer", "threat": "both", "year": 2023, "norm": "L∞",
+        "authors": "Ge et al. (NeurIPS 2023)",
+        "desc": "Penalizing Gradient Norm: adds a gradient-norm penalty to seek flat local maxima in the loss landscape. Flat maxima generalise better across models, boosting black-box transfer.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "pgn_lambda": {"label": "λ (penalty weight)", "min": 0.1, "max": 5.0, "step": 0.1, "default": 1.0},
+        },
+    },
+    "RAP": {
+        "cat": "Transfer", "threat": "both", "year": 2022, "norm": "L∞",
+        "authors": "Qin et al. (NeurIPS 2022)",
+        "desc": "Reverse Adversarial Perturbation: bi-level min-max optimisation that seeks flat loss regions by first finding a reverse perturbation that hurts the attack, then overcoming it.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "rap_epsilon": {"label": "Inner ε", "min": 0.005, "max": 0.1, "step": 0.005, "default": 0.02},
+            "rap_steps": {"label": "Inner steps", "min": 1, "max": 20, "step": 1, "default": 5},
+            "late_start": {"label": "Late start ratio", "min": 0, "max": 0.5, "step": 0.1, "default": 0.0},
+        },
+    },
+
+    # ── Feature-Level ─────────────────────────────────────────────────
+    "FIA": {
+        "cat": "Feature-Level", "threat": "both", "year": 2021, "norm": "L∞",
+        "authors": "Wang et al. (ICCV 2021)",
+        "desc": "Feature Importance-aware Attack: computes aggregate gradient from random feature-drop masks to identify object-aware important features, then attacks only those features for better transfer.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "n_drop": {"label": "# drop samples", "min": 5, "max": 50, "step": 5, "default": 30},
+            "drop_rate": {"label": "Drop rate", "min": 0.1, "max": 0.7, "step": 0.1, "default": 0.3},
+        },
+    },
+    "NAA": {
+        "cat": "Feature-Level", "threat": "both", "year": 2022, "norm": "L∞",
+        "authors": "Zhang et al. (CVPR 2022)",
+        "desc": "Neuron Attribution-based Attack: uses path-integrated gradients to compute neuron-level attribution at an intermediate layer, then weights attack gradients by these attributions.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "n_ig_steps": {"label": "IG steps", "min": 5, "max": 30, "step": 5, "default": 10},
+        },
+    },
+
+    # ── ViT / Attention ───────────────────────────────────────────────
+    "TGR": {
+        "cat": "ViT/Attention", "threat": "both", "year": 2023, "norm": "L∞",
+        "authors": "Zhang et al. (CVPR 2023)",
+        "desc": "Token Gradient Regularization: regularises per-token gradients during ViT backprop to prevent extreme tokens from dominating, reducing surrogate-specific gradient spikes.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+        },
+    },
+    "PNA": {
+        "cat": "ViT/Attention", "threat": "both", "year": 2022, "norm": "L∞",
+        "authors": "Wei et al. (AAAI 2022)",
+        "desc": "Pay No Attention: skips attention gradients during ViT backprop and applies PatchOut (random token dropping) for input diversity. Bypasses model-specific attention patterns.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "pna_patchout": {"label": "PatchOut keep prob", "min": 0.3, "max": 1.0, "step": 0.1, "default": 0.7},
+        },
+    },
+
+    # ── Backward Propagation ──────────────────────────────────────────
+    "LinBP": {
+        "cat": "Backward-Prop", "threat": "both", "year": 2020, "norm": "L∞",
+        "authors": "Guo et al. (NeurIPS 2020)",
+        "desc": "Linear Backpropagation: linearises ReLU/GELU during backprop by removing zero-clipping, letting gradients flow through regardless of activation sign. Prevents surrogate-specific gradient loss.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+        },
+    },
+    "SGM": {
+        "cat": "Backward-Prop", "threat": "both", "year": 2020, "norm": "L∞",
+        "authors": "Wu et al. (ICLR 2020)",
+        "desc": "Skip Gradient Method: amplifies gradients through skip/residual connections by decaying residual-branch gradients. Makes gradients less overfitted to residual block specifics.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "sgm_gamma": {"label": "Skip decay (γ)", "min": 0.1, "max": 1.0, "step": 0.1, "default": 0.5},
+        },
+    },
+
+    # ── Integrated Gradients ──────────────────────────────────────────
+    "MIG": {
+        "cat": "Integrated-Grad", "threat": "both", "year": 2022, "norm": "L∞",
+        "authors": "Ma et al. (ICLR 2022)",
+        "desc": "Momentum Integrated Gradients: combines path-integrated gradients (from scaled baselines to current point) with momentum, providing a more generalised gradient signal.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "n_ig": {"label": "IG steps", "min": 5, "max": 30, "step": 5, "default": 10},
+        },
+    },
+
+    # ── Momentum & Gradient (Advanced) ────────────────────────────────
+    "SMI-FGSM": {
+        "cat": "Transfer", "threat": "both", "year": 2022, "norm": "L∞",
+        "authors": "Wang et al.",
+        "desc": "Spatial Momentum FGSM: dual momentum — temporal across iterations + spatial across image regions. ~10% average improvement in transfer rate.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "spatial_decay": {"label": "Spatial decay", "min": 0.1, "max": 1.0, "step": 0.1, "default": 0.6},
+            "smi_blocks": {"label": "# blocks", "min": 2, "max": 6, "step": 1, "default": 3},
+        },
+    },
+    "GNP": {
+        "cat": "Transfer", "threat": "both", "year": 2023, "norm": "L∞",
+        "authors": "Wu et al. (ICME 2023)",
+        "desc": "Gradient Norm Penalty: penalises the gradient norm to drive optimisation toward flat loss regions. Plug-in enhancement for any gradient method.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "gnp_lambda": {"label": "λ (penalty weight)", "min": 0.1, "max": 5.0, "step": 0.1, "default": 1.0},
+        },
+    },
+    "DRA": {
+        "cat": "Transfer", "threat": "both", "year": 2023, "norm": "L∞",
+        "authors": "Huang et al.",
+        "desc": "Direction-Aggregated Attack: aggregates gradient directions from multiple augmented views with cosine-weighted selection. 94.6% ASR on adversarially trained models.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "dra_views": {"label": "# views", "min": 3, "max": 10, "step": 1, "default": 5},
+        },
+    },
+
+    # ── Input Transformation (Advanced) ───────────────────────────────
+    "SIA": {
+        "cat": "Input-Transform", "threat": "both", "year": 2023, "norm": "L∞",
+        "authors": "Wang et al. (ICCV 2023)",
+        "desc": "Structure Invariant Attack: splits image into blocks, applies independent random affine + colour transforms per block while preserving spatial structure.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "sia_blocks": {"label": "Block grid (s)", "min": 2, "max": 6, "step": 1, "default": 3},
+        },
+    },
+    "S4ST": {
+        "cat": "Input-Transform", "threat": "both", "year": 2024, "norm": "L∞",
+        "authors": "Liu et al.",
+        "desc": "Strong Self-transferable faSt Simple Scale Transformation: dimensionally consistent scaling + block-wise operations. SOTA targeted transfer (77.7% ASR, +17.2% over prior).",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "n_aug": {"label": "# augmented copies", "min": 1, "max": 10, "step": 1, "default": 5},
+            "scale_lo": {"label": "Scale min", "min": 0.3, "max": 1.0, "step": 0.1, "default": 0.5},
+            "scale_hi": {"label": "Scale max", "min": 1.0, "max": 2.0, "step": 0.1, "default": 1.5},
+        },
+    },
+    "RDIM": {
+        "cat": "Input-Transform", "threat": "both", "year": 2021, "norm": "L∞",
+        "authors": "Zou et al.",
+        "desc": "Resized-Diverse-Inputs Method: combines resized diverse inputs with diversity-ensemble. Wider resize range than DIM for more aggressive input diversity. 93% ASR.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "n_diverse": {"label": "# diverse copies", "min": 1, "max": 10, "step": 1, "default": 5},
+            "resize_lo": {"label": "Resize min", "min": 0.3, "max": 1.0, "step": 0.1, "default": 0.5},
+            "resize_hi": {"label": "Resize max", "min": 1.0, "max": 2.0, "step": 0.1, "default": 1.3},
+        },
+    },
+    "StAdv": {
+        "cat": "Input-Transform", "threat": "both", "year": 2018, "norm": "Flow",
+        "authors": "Xiao et al. (ICLR 2018)",
+        "desc": "Spatially Transformed Adversarial: spatial/geometric deformations (flow field) instead of pixel perturbations. Harder to defend with Lp-based defenses.",
+        "params": {
+            "epsilon": {"label": "Max displacement", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 50, "max": 2000, "step": 50, "default": 500},
+            "flow_lr": {"label": "Flow learning rate", "min": 0.001, "max": 0.05, "step": 0.001, "default": 0.005},
+            "flow_reg": {"label": "Smoothness weight", "min": 0.01, "max": 0.5, "step": 0.01, "default": 0.05},
+        },
+    },
+
+    # ── Loss & Logit Optimization ─────────────────────────────────────
+    "Logit Loss": {
+        "cat": "Loss-Optim", "threat": "both", "year": 2021, "norm": "L∞",
+        "authors": "Zhao et al. (NeurIPS 2021)",
+        "desc": "Simply maximizes the target logit: L = -Z_t. Avoids gradient vanishing of cross-entropy. Constant gradient magnitude regardless of confidence.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 2000, "step": 1, "default": 300},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+        },
+    },
+    "Logit Calibration": {
+        "cat": "Loss-Optim", "threat": "both", "year": 2023, "norm": "L∞",
+        "authors": "He et al. (TIFS 2023)",
+        "desc": "Temperature-scaled cross-entropy + adaptive margin to prevent logit saturation. Addresses gradient vanishing through calibrated temperature.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 2000, "step": 1, "default": 300},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "lc_temperature": {"label": "Temperature (T)", "min": 1.0, "max": 10.0, "step": 0.5, "default": 3.0},
+            "lc_margin": {"label": "Margin", "min": 0.0, "max": 5.0, "step": 0.5, "default": 0.0},
+        },
+    },
+    "Po+Trip": {
+        "cat": "Loss-Optim", "threat": "both", "year": 2020, "norm": "L∞",
+        "authors": "Li et al. (CVPR 2020)",
+        "desc": "Poincaré distance + triplet loss: self-adaptive gradient magnitude pushing away from source and pulling toward target in hyperbolic space.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "potrip_margin": {"label": "Triplet margin", "min": 0.1, "max": 2.0, "step": 0.1, "default": 0.3},
+        },
+    },
+
+    # ── Feature-Level (Advanced) ──────────────────────────────────────
+    "ILA": {
+        "cat": "Feature-Level", "threat": "both", "year": 2019, "norm": "L∞",
+        "authors": "Huang et al. (ICCV 2019)",
+        "desc": "Intermediate Level Attack: two-stage — standard attack then fine-tune by maximizing intermediate-layer perturbation in the found direction.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "ila_ratio": {"label": "ILA stage ratio", "min": 0.1, "max": 0.9, "step": 0.1, "default": 0.5},
+        },
+    },
+    "ILPD": {
+        "cat": "Feature-Level", "threat": "both", "year": 2023, "norm": "L∞",
+        "authors": "Li et al. (NeurIPS 2023)",
+        "desc": "Intermediate-Level Perturbation Decay: single-stage ILA alternative. Perturbation decay balances adversarial direction and intermediate magnitude. +10.07% over ILA.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "ilpd_gamma": {"label": "Decay γ", "min": 0.05, "max": 1.0, "step": 0.05, "default": 0.3},
+        },
+    },
+
+    # ── Model Augmentation / Ensemble ─────────────────────────────────
+    "Ghost Networks": {
+        "cat": "Ensemble", "threat": "both", "year": 2020, "norm": "L∞",
+        "authors": "Li et al. (AAAI 2020)",
+        "desc": "Creates virtual model variants from one network via dense dropout erosion. Simulates ensemble from a single surrogate model.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "ghost_dropout": {"label": "Ghost dropout rate", "min": 0.01, "max": 0.3, "step": 0.01, "default": 0.1},
+            "n_ghost": {"label": "# ghost copies", "min": 2, "max": 10, "step": 1, "default": 5},
+        },
+    },
+    "CWA": {
+        "cat": "Ensemble", "threat": "both", "year": 2024, "norm": "L∞",
+        "authors": "Chen et al. (ICLR 2024)",
+        "desc": "Common Weakness Attack: targets flatness of loss landscape + closeness to local optima. Simulates ensemble via model augmentation for single-model settings.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "cwa_n_aug": {"label": "# model augments", "min": 2, "max": 10, "step": 1, "default": 3},
+            "cwa_flat_weight": {"label": "Flatness weight", "min": 0.1, "max": 2.0, "step": 0.1, "default": 0.5},
+        },
+    },
+
+    # ── ViT / Attention (Advanced) ────────────────────────────────────
+    "SU": {
+        "cat": "ViT/Attention", "threat": "both", "year": 2023, "norm": "L∞",
+        "authors": "Wei et al. (CVPR 2023)",
+        "desc": "Self-Universality: optimises perturbation universal across different regions of a single image. Feature similarity between global and random crops. +12%.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "su_crops": {"label": "# crops", "min": 1, "max": 8, "step": 1, "default": 3},
+            "su_crop_ratio": {"label": "Crop ratio", "min": 0.4, "max": 0.9, "step": 0.1, "default": 0.7},
+            "su_weight": {"label": "SU loss weight", "min": 0.1, "max": 2.0, "step": 0.1, "default": 0.5},
+        },
+    },
+    "DA": {
+        "cat": "ViT/Attention", "threat": "both", "year": 2025, "norm": "L∞",
+        "authors": "Wei et al. (IJCV 2025)",
+        "desc": "Dilated Attention Attack: maximises attention maps of target class from multiple intermediate layers with dynamic linear augmentation. Works on CNNs + ViTs.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "da_n_aug": {"label": "# augments", "min": 1, "max": 8, "step": 1, "default": 3},
+            "da_strength": {"label": "Augment strength", "min": 0.1, "max": 1.0, "step": 0.1, "default": 0.3},
+        },
+    },
+
+    # ── Integrated Gradients (Advanced) ───────────────────────────────
+    "IG-FGSM": {
+        "cat": "Integrated-Grad", "threat": "both", "year": 2021, "norm": "L∞",
+        "authors": "Qi et al.",
+        "desc": "Integrated Gradients FGSM: replaces single-point gradients with path-integral from baseline. Smoother, less model-specific gradients. Predecessor to MIG.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "n_ig": {"label": "IG steps", "min": 5, "max": 30, "step": 5, "default": 10},
+        },
+    },
+
+    # ── Defense-Aware ─────────────────────────────────────────────────
+    "SASD": {
+        "cat": "Defense-Aware", "threat": "both", "year": 2024, "norm": "L∞",
+        "authors": "Chen et al. (CVPR 2024)",
+        "desc": "Sharpness-Aware Self-Distillation: improves surrogate during attack via SAM-style perturbation + self-distillation. Flat loss landscape + knowledge transfer. +12.2%.",
+        "params": {
+            "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
+            "iterations": {"label": "Iterations", "min": 1, "max": 500, "step": 1, "default": 50},
+            "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
+            "sasd_rho": {"label": "SAM ρ", "min": 0.01, "max": 0.2, "step": 0.01, "default": 0.05},
+            "sasd_temp": {"label": "Distillation T", "min": 1.0, "max": 10.0, "step": 0.5, "default": 4.0},
+        },
+    },
 
     # ── Black-Box ──────────────────────────────────────────────────────
     "Square Attack": {
