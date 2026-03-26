@@ -68,7 +68,7 @@ It enables researchers to generate, measure, and validate adversarial examples a
 AI models and systems.
 
 ### Capabilities
-- **32+ Image Attack Algorithms** — FGSM, PGD, C&W, AutoAttack, SarabCraft R1, and more
+- **61 Image Attack Algorithms** — FGSM, PGD, C&W, AutoAttack, SarabCraft R1, and 56 more transfer, optimization, and black-box methods
 - **8 Audio Attack Types** — Including ASR transcription, hidden commands, and psychoacoustic masking
 - **Transfer Verification** — Test adversarial examples against cloud APIs (AWS, Azure, GCP)
 - **Plugin System** — Extend with custom Python classifiers
