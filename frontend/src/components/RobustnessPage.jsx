@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { getModels, getAttacks, getAsrModels, runRobustnessSSE, runAudioRobustnessSSE } from '../api/client'
 import { Card, SectionLabel, RunButton, ErrorMsg } from './ui/Section'
-import { FALLBACK_REGISTRY, THREAT_COLORS, THREAT_LABEL } from './image/attackRegistry'
-import { AUDIO_ATTACK_REGISTRY, THREAT_COLORS as A_TC, THREAT_LABEL as A_TL } from './audio/audioAttackRegistry'
+import { FALLBACK_REGISTRY } from './image/attackRegistry'
+import { THREAT_COLORS, THREAT_LABEL } from '../constants/threat'
+import { AUDIO_ATTACK_REGISTRY } from './audio/audioAttackRegistry'
 import AttackInfoModal from './image/AttackInfoModal'
 import ParamRenderer from './image/ParamRenderer'
 import { buildAttackParamPayload } from './image/sarabcraftR1'
@@ -722,7 +723,7 @@ function AudioAttackSelector({ grouped, selected, searchTerm, setSearchTerm, onS
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className={`text-sm truncate ${sel ? 'text-[var(--accent)] font-semibold' : 'text-slate-200'}`}>{a.name}</span>
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-medium shrink-0 ${A_TC[a.threat] || A_TC.whitebox}`}>{A_TL[a.threat] || 'White-box'}</span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-medium shrink-0 ${THREAT_COLORS[a.threat] || THREAT_COLORS.whitebox}`}>{THREAT_LABEL[a.threat] || 'White-box'}</span>
                       <span className="text-[10px] text-slate-600 shrink-0">{a.year}</span>
                     </div>
                     <div className="text-[10px] text-slate-500 truncate">{a.authors} — {a.norm}</div>

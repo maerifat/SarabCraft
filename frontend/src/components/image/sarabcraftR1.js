@@ -1,4 +1,6 @@
-export const SARABCRAFT_R1_NAME = 'SarabCraft R1'
+import { SARABCRAFT_R1_NAME } from '../../constants/threat'
+
+export { SARABCRAFT_R1_NAME }
 
 export const SARABCRAFT_R1_STRATEGY_OPTIONS = [
   { value: 'tile_shuffle', label: 'Tile Shuffle' },
