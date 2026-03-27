@@ -40,7 +40,7 @@ from backend.models.registry import (
 from models.loader import load_model
 from utils.image import preprocess_image, tensor_to_pil, get_predictions
 from utils.metrics import compute_metrics
-from attacks.router import run_attack_method
+from attacks.image.router import run_attack_method
 from backend.routes.history import save_entry
 
 logger = logging.getLogger(__name__)
@@ -358,19 +358,19 @@ def _run_audio_attack_for_model(atk_key, wav_tensor, sr, model_key, target_text,
     lr = params.get("lr", 0.005)
 
     if atk_key == "transcription":
-        from attacks.transcription_attack import targeted_transcription_attack
+        from attacks.audio.transcription_attack import targeted_transcription_attack
         adv = targeted_transcription_attack(wrapper, wav_tensor, target_text, epsilon=eps, iterations=iters, lr=lr)
     elif atk_key == "hidden_command":
-        from attacks.hidden_command import hidden_command_attack
+        from attacks.audio.hidden_command import hidden_command_attack
         adv = hidden_command_attack(wrapper, wav_tensor, target_text, epsilon=eps, iterations=iters, lr=lr)
     elif atk_key == "psychoacoustic":
-        from attacks.psychoacoustic_attack import psychoacoustic_transcription_attack
+        from attacks.audio.psychoacoustic_attack import psychoacoustic_transcription_attack
         adv = psychoacoustic_transcription_attack(wrapper, wav_tensor, target_text, iterations=iters, lr=lr)
     elif atk_key == "ota":
-        from attacks.over_the_air_attack import over_the_air_attack
+        from attacks.audio.over_the_air_attack import over_the_air_attack
         adv = over_the_air_attack(wrapper, wav_tensor, target_text, epsilon=eps, iterations=iters, lr=lr)
     elif atk_key == "jamming":
-        from attacks.speech_jamming import speech_jamming_untargeted
+        from attacks.audio.speech_jamming import speech_jamming_untargeted
         adv = speech_jamming_untargeted(wrapper, wav_tensor, epsilon=eps, iterations=iters, lr=lr)
     else:
         raise ValueError(f"Unknown audio attack key: {atk_key}")

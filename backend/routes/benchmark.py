@@ -164,7 +164,7 @@ def _run_image_benchmark(
 ):
     from models.loader import load_model
     from utils.image import preprocess_image, get_predictions, tensor_to_pil
-    from attacks.router import AttackCancelledError, run_attack_method
+    from attacks.image.router import AttackCancelledError, run_attack_method
     from utils.metrics import compute_metrics
 
     source_entry = resolve_source_model(source_model, domain="image", task=TASK_IMAGE_CLASSIFICATION)
@@ -422,19 +422,19 @@ def _run_single_audio_attack(atk_key, wav_tensor, sr, model_key, target_text, ep
     orig_text = wrapper.transcribe(wav_tensor)
 
     if atk_key == "transcription":
-        from attacks.transcription_attack import targeted_transcription_attack
+        from attacks.audio.transcription_attack import targeted_transcription_attack
         adv = targeted_transcription_attack(wrapper, wav_tensor, target_text, epsilon=eps, iterations=iters, lr=lr)
     elif atk_key == "hidden_command":
-        from attacks.hidden_command import hidden_command_attack
+        from attacks.audio.hidden_command import hidden_command_attack
         adv = hidden_command_attack(wrapper, wav_tensor, target_text, epsilon=eps, iterations=iters, lr=lr)
     elif atk_key == "psychoacoustic":
-        from attacks.psychoacoustic_attack import psychoacoustic_transcription_attack
+        from attacks.audio.psychoacoustic_attack import psychoacoustic_transcription_attack
         adv = psychoacoustic_transcription_attack(wrapper, wav_tensor, target_text, iterations=iters, lr=lr)
     elif atk_key == "ota":
-        from attacks.over_the_air_attack import over_the_air_attack
+        from attacks.audio.over_the_air_attack import over_the_air_attack
         adv = over_the_air_attack(wrapper, wav_tensor, target_text, epsilon=eps, iterations=iters, lr=lr)
     elif atk_key == "jamming":
-        from attacks.speech_jamming import speech_jamming_untargeted
+        from attacks.audio.speech_jamming import speech_jamming_untargeted
         adv = speech_jamming_untargeted(wrapper, wav_tensor, epsilon=eps, iterations=iters, lr=lr)
     else:
         raise ValueError(f"Unknown audio attack key: {atk_key}")

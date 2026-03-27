@@ -1,13 +1,13 @@
 """
 Text attack router: dispatches to the correct attack function.
 
-Mirrors attacks/router.py — handles model wrapping, cancellation,
+Mirrors attacks/image/router.py — handles model wrapping, cancellation,
 constraint setup, and dispatch via TEXT_ATTACK_DISPATCH table.
 """
 
 import logging
 
-from attacks.text_types import AttackCancelledError
+from attacks.text.types import AttackCancelledError
 
 from attacks.text.deepwordbug import run_deepwordbug
 from attacks.text.textbugger import run_textbugger
@@ -32,7 +32,7 @@ logger = logging.getLogger("textattack.router")
 class _TextModelWrapper:
     """Wraps HF model to provide clean predict() interface + query counting.
 
-    Mirrors _PixelModelWrapper in attacks/router.py — normalises the model
+    Mirrors _PixelModelWrapper in attacks/image/router.py — normalises the model
     interface so attack functions don't touch HF internals directly.
     """
 
@@ -68,7 +68,7 @@ class _TextModelWrapper:
 class _CancelableTextModelWrapper:
     """Checks cancellation on each predict() call.
 
-    Mirrors _CancelableModelWrapper in attacks/router.py.
+    Mirrors _CancelableModelWrapper in attacks/image/router.py.
     """
 
     def __init__(self, wrapped: _TextModelWrapper, should_cancel):
@@ -228,7 +228,7 @@ def run_text_attack(
 ) -> tuple[str, int, str | None]:
     """Route to appropriate text attack function.
 
-    Mirrors run_attack_method() in attacks/router.py:
+    Mirrors run_attack_method() in attacks/image/router.py:
       1. Wraps model (_TextModelWrapper + cancellation)
       2. Resolves target_label to model's actual label names
       3. Dispatches to attack function

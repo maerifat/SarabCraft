@@ -14,9 +14,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from attacks.text_config import TEXT_ATTACK_REGISTRY, AVAILABLE_TEXT_MODELS, DEFAULT_TEXT_MODEL
+from attacks.text.config import TEXT_ATTACK_REGISTRY, AVAILABLE_TEXT_MODELS, DEFAULT_TEXT_MODEL
 from models.text_loader import load_text_model, get_predictions
-from attacks.text_result_builder import run_and_build_result
+from attacks.text.result_builder import run_and_build_result
 
 router = APIRouter()
 

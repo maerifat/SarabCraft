@@ -11,8 +11,8 @@ High-level API for text attacks:
 import time
 import logging
 
-from attacks.text_types import AttackResult
-from attacks.text_router import run_text_attack, _TextModelWrapper
+from attacks.text.types import AttackResult
+from attacks.text.router import run_text_attack, _TextModelWrapper
 from models.text_loader import get_predictions, get_label_and_confidence
 from utils.text_metrics import compute_all_metrics
 
