@@ -34,13 +34,13 @@ from utils.asr_utils import (
     load_audio_for_asr, compute_wer, compute_snr,
     waveform_to_numpy as asr_waveform_to_numpy,
 )
-from attacks.audio_router import run_audio_attack_method
-from attacks.transcription_attack import targeted_transcription_attack, targeted_transcription_pgd
-from attacks.hidden_command import hidden_command_attack, hidden_command_pgd
-from attacks.universal_muting import universal_muting_attack, apply_universal_segment, generate_training_waveforms
-from attacks.psychoacoustic_attack import psychoacoustic_transcription_attack
-from attacks.over_the_air_attack import over_the_air_attack
-from attacks.speech_jamming import speech_jamming_untargeted, speech_jamming_band_noise
+from attacks.audio.router import run_audio_attack_method
+from attacks.audio.transcription_attack import targeted_transcription_attack, targeted_transcription_pgd
+from attacks.audio.hidden_command import hidden_command_attack, hidden_command_pgd
+from attacks.audio.universal_muting import universal_muting_attack, apply_universal_segment, generate_training_waveforms
+from attacks.audio.psychoacoustic_attack import psychoacoustic_transcription_attack
+from attacks.audio.over_the_air_attack import over_the_air_attack
+from attacks.audio.speech_jamming import speech_jamming_untargeted, speech_jamming_band_noise
 
 router = APIRouter()
 

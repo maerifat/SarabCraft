@@ -49,14 +49,14 @@ from utils.attack_names import canonicalize_attack_name, normalize_attack_payloa
 from utils.audio import get_audio_predictions, load_audio, parse_target_label, waveform_to_numpy
 from utils.image import get_predictions, preprocess_image, tensor_to_pil
 from utils.metrics import compute_metrics
-from attacks.audio_router import run_audio_attack_method
-from attacks.hidden_command import hidden_command_attack, hidden_command_pgd
-from attacks.over_the_air_attack import over_the_air_attack
-from attacks.psychoacoustic_attack import psychoacoustic_transcription_attack
-from attacks.router import AttackCancelledError, run_attack_method
-from attacks.speech_jamming import speech_jamming_band_noise, speech_jamming_untargeted
-from attacks.transcription_attack import targeted_transcription_attack, targeted_transcription_pgd
-from attacks.universal_muting import apply_universal_segment, generate_training_waveforms, universal_muting_attack
+from attacks.audio.router import run_audio_attack_method
+from attacks.audio.hidden_command import hidden_command_attack, hidden_command_pgd
+from attacks.audio.over_the_air_attack import over_the_air_attack
+from attacks.audio.psychoacoustic_attack import psychoacoustic_transcription_attack
+from attacks.image.router import AttackCancelledError, run_attack_method
+from attacks.audio.speech_jamming import speech_jamming_band_noise, speech_jamming_untargeted
+from attacks.audio.transcription_attack import targeted_transcription_attack, targeted_transcription_pgd
+from attacks.audio.universal_muting import apply_universal_segment, generate_training_waveforms, universal_muting_attack
 
 logger = logging.getLogger("mlsec.jobs.handlers")
 
@@ -1251,9 +1251,9 @@ def _run_text_attack(job: dict) -> dict:
     """Run a text adversarial attack job."""
     import json as _json
     from dataclasses import asdict
-    from attacks.text_result_builder import run_and_build_result
+    from attacks.text.result_builder import run_and_build_result
     from models.text_loader import load_text_model
-    from attacks.text_config import AVAILABLE_TEXT_MODELS
+    from attacks.text.config import AVAILABLE_TEXT_MODELS
 
     fields = _fields(job)
     job_id = job["job_id"]

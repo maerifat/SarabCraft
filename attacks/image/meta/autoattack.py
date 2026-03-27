@@ -12,9 +12,9 @@ import torch
 import torch.nn.functional as F
 from config import device
 
-from attacks.classic.apgd import targeted_apgd
-from attacks.classic.fab import targeted_fab
-from attacks.blackbox.square import targeted_square
+from attacks.image.classic.apgd import targeted_apgd
+from attacks.image.classic.fab import targeted_fab
+from attacks.image.blackbox.square import targeted_square
 
 
 def targeted_autoattack(model, img_tensor, target_class, epsilon,

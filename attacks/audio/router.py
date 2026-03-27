@@ -7,12 +7,12 @@ parameter scaling (epsilon is in raw amplitude, not /255) and delegates
 to the same classic attack implementations.
 """
 
-from attacks.classic.fgsm import targeted_fgsm
-from attacks.classic.ifgsm import targeted_bim
-from attacks.classic.pgd import targeted_pgd
-from attacks.classic.mi_fgsm import targeted_mi_fgsm
-from attacks.classic.deepfool import targeted_deepfool
-from attacks.classic.cw import targeted_cw
+from attacks.image.classic.fgsm import targeted_fgsm
+from attacks.image.classic.ifgsm import targeted_bim
+from attacks.image.classic.pgd import targeted_pgd
+from attacks.image.classic.mi_fgsm import targeted_mi_fgsm
+from attacks.image.classic.deepfool import targeted_deepfool
+from attacks.image.classic.cw import targeted_cw
 
 
 def run_audio_attack_method(attack_name, model_wrapper, waveform, target_class,

@@ -29,7 +29,7 @@ from models.loader import load_model
 from utils.image import preprocess_image, tensor_to_pil, get_predictions
 from utils.metrics import compute_metrics
 from utils.attack_names import SARABCRAFT_R1_NAME
-from attacks.router import run_attack_method
+from attacks.image.router import run_attack_method
 from backend.routes.history import save_entry
 
 router = APIRouter()

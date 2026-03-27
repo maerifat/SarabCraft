@@ -10,7 +10,7 @@ Three strategies:
 import logging
 from typing import Optional
 
-from attacks.text_config import DEFAULT_MLM_MODEL
+from attacks.text.config import DEFAULT_MLM_MODEL
 
 logger = logging.getLogger("textattack.substitution")
 
