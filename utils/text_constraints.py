@@ -63,17 +63,21 @@ def compute_windowed_semantic_similarity(
 ) -> tuple[bool, float]:
     """Windowed USE similarity matching the official BAE configuration.
 
-    From author email correspondence (documented in TextAttack):
+    From TextAttack BAEGarg2019 (and author email correspondence):
       1. USE comparison within a window of size 15 around the perturbed word.
-      2. Threshold of 0.1 for inputs shorter than the window size
-         (roughly: always accept short texts).
+      2. skip_text_shorter_than_window=True: always accept short texts
+         (inputs with fewer words than the window size bypass the check).
       3. Compare against the original text (not incrementally modified text).
+      4. Threshold=0.936338023 on cosine metric (adjusted from the paper's
+         stated 0.8 to account for metric conversion in the TextAttack
+         reference: 1 - (1 - 0.8) / pi).
 
     Args:
         original_text: the unmodified input text
         candidate_text: the perturbed candidate text
         word_position: 0-based word index of the perturbation
-        threshold: cosine similarity threshold (default 0.8, paper value)
+        threshold: cosine similarity threshold (default 0.936338023, matching
+            TextAttack UniversalSentenceEncoder configuration)
         window_size: number of words in the comparison window (default 15)
 
     Returns:
@@ -83,11 +87,9 @@ def compute_windowed_semantic_similarity(
 
     orig_words = [w for w, _, _ in get_words_and_spans(original_text)]
 
-    # Short text: relaxed threshold of 0.1 (from author correspondence)
-    SHORT_TEXT_THRESHOLD = 0.1
+    # TextAttack: skip_text_shorter_than_window=True — always accept short texts
     if len(orig_words) < window_size:
-        sim = compute_semantic_similarity(original_text, candidate_text)
-        return sim >= SHORT_TEXT_THRESHOLD, sim
+        return True, 1.0
 
     # Extract window centred on perturbed position
     half = window_size // 2

@@ -5,17 +5,46 @@ Text tokenization, word span tracking, and reconstruction utilities.
 import re
 from typing import Optional
 
-# Simple stopword set (no external dependency needed)
-STOPWORDS = frozenset({
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "shall",
-    "should", "may", "might", "must", "can", "could", "am", "i", "me",
-    "my", "we", "our", "you", "your", "he", "him", "his", "she", "her",
-    "it", "its", "they", "them", "their", "this", "that", "these", "those",
-    "and", "but", "or", "nor", "not", "no", "so", "if", "of", "in", "on",
-    "at", "to", "for", "with", "by", "from", "as", "into", "about", "up",
-    "out", "off", "over", "then", "than", "too", "very", "just",
+# NLTK English stopwords (179 words) — matches TextAttack StopwordModification.
+# Loaded dynamically from NLTK when available; hardcoded fallback below.
+_NLTK_STOPWORDS = None
+
+_FALLBACK_STOPWORDS = frozenset({
+    "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you",
+    "you're", "you've", "you'll", "you'd", "your", "yours", "yourself",
+    "yourselves", "he", "him", "his", "himself", "she", "she's", "her",
+    "hers", "herself", "it", "it's", "its", "itself", "they", "them",
+    "their", "theirs", "themselves", "what", "which", "who", "whom", "this",
+    "that", "that'll", "these", "those", "am", "is", "are", "was", "were",
+    "be", "been", "being", "have", "has", "had", "having", "do", "does",
+    "did", "doing", "a", "an", "the", "and", "but", "if", "or", "because",
+    "as", "until", "while", "of", "at", "by", "for", "with", "about",
+    "against", "between", "through", "during", "before", "after", "above",
+    "below", "to", "from", "up", "down", "in", "out", "on", "off", "over",
+    "under", "again", "further", "then", "once", "here", "there", "when",
+    "where", "why", "how", "all", "both", "each", "few", "more", "most",
+    "other", "some", "such", "no", "nor", "not", "only", "own", "same",
+    "so", "than", "too", "very", "s", "t", "can", "will", "just", "don",
+    "don't", "should", "should've", "now", "d", "ll", "m", "o", "re", "ve",
+    "y", "ain", "aren", "aren't", "couldn", "couldn't", "didn", "didn't",
+    "doesn", "doesn't", "hadn", "hadn't", "hasn", "hasn't", "haven",
+    "haven't", "isn", "isn't", "ma", "mightn", "mightn't", "mustn",
+    "mustn't", "needn", "needn't", "shan", "shan't", "shouldn", "shouldn't",
+    "wasn", "wasn't", "weren", "weren't", "won", "won't", "wouldn",
+    "wouldn't",
 })
+
+
+def _get_stopwords() -> frozenset:
+    global _NLTK_STOPWORDS
+    if _NLTK_STOPWORDS is not None:
+        return _NLTK_STOPWORDS
+    try:
+        from nltk.corpus import stopwords
+        _NLTK_STOPWORDS = frozenset(stopwords.words("english"))
+    except (ImportError, LookupError):
+        _NLTK_STOPWORDS = _FALLBACK_STOPWORDS
+    return _NLTK_STOPWORDS
 
 # Basic POS patterns (avoids NLTK dependency for simple cases)
 _NOUN_SUFFIXES = {"tion", "ment", "ness", "ity", "ism", "ist", "ence", "ance", "er", "or"}
@@ -60,8 +89,12 @@ def replace_words_at(text: str, replacements: dict[int, str]) -> str:
 
 
 def is_stopword(word: str) -> bool:
-    """Check if word is a stopword (case-insensitive)."""
-    return word.lower().strip(".,!?;:'\"()[]{}") in STOPWORDS
+    """Check if word is a stopword (case-insensitive).
+
+    Uses NLTK English stopwords when available (matches TextAttack
+    StopwordModification), with a 179-word hardcoded fallback.
+    """
+    return word.lower().strip(".,!?;:'\"()[]{}") in _get_stopwords()
 
 
 def simple_pos_tag(word: str) -> str:

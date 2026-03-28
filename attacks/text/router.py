@@ -162,7 +162,7 @@ TEXT_ATTACK_DISPATCH = {
         run_bae(w, tok, txt, tgt,
             str(p.get("strategy", "R")),
             _p(p, "max_candidates", 50, int),
-            _p(p, "similarity_threshold", 0.8),
+            _p(p, "similarity_threshold", 0.936338023),
             _p(p, "max_perturbation_ratio", 0.5)),
 
     "PWWS": lambda w, tok, txt, tgt, p:

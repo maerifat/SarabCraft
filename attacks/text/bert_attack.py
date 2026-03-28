@@ -17,30 +17,44 @@ import logging
 logger = logging.getLogger("textattack.attacks.bert_attack")
 
 # ---------------------------------------------------------------------------
-# Official BERT-Attack filter_words list (~240 words)
-# Taken from the official repo: LinyangLee/BERT-Attack/blob/master/bertattack.py
+# Official BERT-Attack filter_words list (~300 words)
+# Exact copy from official repo: LinyangLee/BERT-Attack/blob/master/bertattack.py
 # ---------------------------------------------------------------------------
 BERT_ATTACK_FILTER_WORDS = frozenset([
-    "a", "about", "above", "after", "again", "against", "ain", "all", "am",
-    "an", "and", "any", "are", "aren", "aren't", "as", "at", "be", "because",
-    "been", "before", "being", "below", "between", "both", "but", "by", "can",
-    "couldn", "couldn't", "d", "did", "didn", "didn't", "do", "does", "doesn",
-    "doesn't", "doing", "don", "don't", "down", "during", "each", "few",
-    "for", "from", "further", "had", "hadn", "hadn't", "has", "hasn", "hasn't",
-    "have", "haven", "haven't", "having", "he", "her", "here", "hers",
-    "herself", "him", "himself", "his", "how", "i", "if", "in", "into", "is",
-    "isn", "isn't", "it", "it's", "its", "itself", "just", "ll", "m", "ma",
-    "me", "mightn", "mightn't", "more", "most", "mustn", "mustn't", "my",
-    "myself", "needn", "needn't", "no", "nor", "not", "now", "o", "of", "off",
-    "on", "once", "only", "or", "other", "our", "ours", "ourselves", "out",
-    "over", "own", "re", "s", "same", "shan", "shan't", "she", "she's",
-    "should", "should've", "shouldn", "shouldn't", "so", "some", "such", "t",
-    "than", "that", "that'll", "the", "their", "theirs", "them", "themselves",
-    "then", "there", "these", "they", "this", "those", "through", "to", "too",
-    "under", "until", "up", "ve", "very", "was", "wasn", "wasn't", "we",
-    "were", "weren", "weren't", "what", "when", "where", "which", "while",
-    "who", "whom", "why", "will", "with", "won", "won't", "wouldn", "wouldn't",
-    "y", "you", "you'd", "you'll", "you're", "you've", "your", "yours",
+    "a", "about", "above", "across", "after", "afterwards", "again", "against",
+    "ain", "all", "almost", "alone", "along", "already", "also", "although",
+    "am", "among", "amongst", "an", "and", "another", "any", "anyhow",
+    "anyone", "anything", "anyway", "anywhere", "are", "aren", "aren't",
+    "around", "as", "at", "back", "been", "before", "beforehand", "behind",
+    "being", "below", "beside", "besides", "between", "beyond", "both", "but",
+    "by", "can", "cannot", "could", "couldn", "couldn't", "d", "didn",
+    "didn't", "doesn", "doesn't", "don", "don't", "down", "due", "during",
+    "either", "else", "elsewhere", "empty", "enough", "even", "ever",
+    "everyone", "everything", "everywhere", "except", "first", "for", "former",
+    "formerly", "from", "hadn", "hadn't", "hasn", "hasn't", "haven",
+    "haven't", "he", "hence", "her", "here", "hereafter", "hereby", "herein",
+    "hereupon", "hers", "herself", "him", "himself", "his", "how", "however",
+    "hundred", "i", "if", "in", "indeed", "into", "is", "isn", "isn't", "it",
+    "it's", "its", "itself", "just", "latter", "latterly", "least", "ll",
+    "may", "me", "meanwhile", "mightn", "mightn't", "mine", "more",
+    "moreover", "most", "mostly", "must", "mustn", "mustn't", "my", "myself",
+    "namely", "needn", "needn't", "neither", "never", "nevertheless", "next",
+    "no", "nobody", "none", "noone", "nor", "not", "nothing", "now",
+    "nowhere", "o", "of", "off", "on", "once", "one", "only", "onto", "or",
+    "other", "others", "otherwise", "our", "ours", "ourselves", "out", "over",
+    "per", "please", "s", "same", "shan", "shan't", "she", "she's",
+    "should've", "shouldn", "shouldn't", "somehow", "something", "sometime",
+    "somewhere", "such", "t", "than", "that", "that'll", "the", "their",
+    "theirs", "them", "themselves", "then", "thence", "there", "thereafter",
+    "thereby", "therefore", "therein", "thereupon", "these", "they", "this",
+    "those", "through", "throughout", "thru", "thus", "to", "too", "toward",
+    "towards", "under", "unless", "until", "up", "upon", "used", "ve", "was",
+    "wasn", "wasn't", "we", "were", "weren", "weren't", "what", "whatever",
+    "when", "whence", "whenever", "where", "whereafter", "whereas", "whereby",
+    "wherein", "whereupon", "wherever", "whether", "which", "while",
+    "whither", "who", "whoever", "whole", "whom", "whose", "why", "with",
+    "within", "without", "won", "won't", "would", "wouldn", "wouldn't", "y",
+    "yet", "you", "you'd", "you'll", "you're", "you've", "your", "yours",
     "yourself", "yourselves",
 ])
 
@@ -52,7 +66,7 @@ def run_bert_attack(
     target_label: str = None,
     max_candidates: int = 48,
     max_perturbation_ratio: float = 0.4,
-    threshold_pred_score: float = 0.0,
+    threshold_pred_score: float = 3.0,
     use_bpe: bool = True,
 ) -> str:
     """BERT-Attack: uses BERT MLM for contextual word replacement.
@@ -64,7 +78,8 @@ def run_bert_attack(
          all positions in one forward pass (core innovation of BERT-Attack)
       3. Sub-word BPE: Cartesian product of per-position top-k predictions,
          ranked by perplexity through MLM
-      4. Stopword filter: official filter_words list (~240 words)
+      4. Stopword filter: official filter_words list (~300 words), applied to
+         both source words and candidate substitutions
       5. Impact tracking: uses current_prob, updated after each substitution
       6. No inline semantic similarity — official uses post-hoc USE evaluation
 
@@ -76,6 +91,7 @@ def run_bert_attack(
         max_candidates: top-k MLM predictions per position (paper default: 48)
         max_perturbation_ratio: max fraction of words to perturb (paper: 0.4)
         threshold_pred_score: minimum MLM logit cutoff for single-token words
+            (official default: 3.0 in logit space, per get_substitues())
         use_bpe: handle multi-subword words via BPE combination
 
     Returns:
@@ -89,6 +105,10 @@ def run_bert_attack(
         "BERT-Attack: starting (cands=%d, pert_ratio=%.2f, threshold=%.2f, bpe=%s)",
         max_candidates, max_perturbation_ratio, threshold_pred_score, use_bpe,
     )
+
+    # Normalize whitespace so get_words_and_spans (regex \S+) and
+    # get_bert_attack_substitutions (str.split(' ')) produce identical indices.
+    text = " ".join(text.split())
 
     words_spans = get_words_and_spans(text)
     if not words_spans:
@@ -152,6 +172,8 @@ def run_bert_attack(
             if "##" in cand_clean:
                 continue
             if cand_clean.lower() == cleaned:
+                continue
+            if cand_clean.lower() in BERT_ATTACK_FILTER_WORDS:
                 continue
             filtered_candidates.append(cand_clean)
 
