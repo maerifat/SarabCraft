@@ -151,18 +151,18 @@ def _substitute_c(word: str) -> str:
     """Bug 4 — Sub-C: substitute with visually similar OR keyboard-adjacent character.
 
     Paper defines Sub-C as ONE perturbation type with two sub-variants.
-    Randomly picks between homoglyph and keyboard substitution.
+    Randomly picks between homoglyph and keyboard substitution; if the
+    chosen sub-variant fails, deterministically tries the other.
     """
-    if random.random() < 0.5:
+    use_homoglyph_first = random.random() < 0.5
+    if use_homoglyph_first:
         result = _substitute_homoglyph(word)
+        if result == word:
+            result = _substitute_nearby_key(word)
     else:
         result = _substitute_nearby_key(word)
-    # If the chosen sub-variant couldn't substitute, try the other
-    if result == word:
-        result = _substitute_nearby_key(word) if random.random() < 0.5 else _substitute_homoglyph(word)
-    # Final fallback: swap (graceful degradation)
-    if result == word:
-        result = _swap_adjacent(word)
+        if result == word:
+            result = _substitute_homoglyph(word)
     return result
 
 
@@ -281,8 +281,12 @@ def run_textbugger(
         5. Sub-W: substitute with nearest embedding neighbour (paper: GloVe, k=5)
 
     Supports both white-box (gradient-based) and black-box (query-based) modes.
-    Black-box mode includes sentence-level importance ranking for multi-sentence
-    inputs, as described in Section IV of the paper.
+
+    White-box (Algorithm 1): gradient-based word importance over the full text,
+    then greedy perturbation.
+
+    Black-box (Algorithm 3): sentence importance ranking, then for each sentence
+    in importance order, word importance via deletion, then greedy perturbation.
 
     Args:
         model_wrapper: wrapped model with .predict() method
@@ -303,8 +307,8 @@ def run_textbugger(
     """
     from utils.text_word_importance import sentence_importance
     from utils.text_utils import get_words_and_spans, replace_word_at, is_stopword
+    from utils.text_constraints import compute_semantic_similarity
 
-    # Reproducibility
     if seed is not None:
         random.seed(seed)
 
@@ -315,46 +319,92 @@ def run_textbugger(
     if not words_spans:
         return text
 
-    # ── Word importance scoring ──────────────────────────────────────────
+    orig_label, orig_conf, orig_label_idx = model_wrapper.predict(text)
+    orig_probs = model_wrapper.predict_probs(text)
+    f_y_x = orig_probs[orig_label_idx] if orig_label_idx < len(orig_probs) else orig_conf
+
+    current_text = text
+    perturbed_indices: set[int] = set()
+    state = [0, current_text]  # [perturbations_made, current_text] — mutable container
+
     if mode == "white-box":
+        # ── Algorithm 1: White-box ────────────────────────────────────────
         from utils.text_word_importance import gradient_importance
         importance = gradient_importance(model_wrapper.model, tokenizer, text)
         logger.info("TextBugger: using white-box gradient importance")
+
+        result = _attack_with_importance(
+            model_wrapper, text, words_spans, importance,
+            orig_label, orig_label_idx, f_y_x, target_label, strategy,
+            similarity_threshold, max_queries, max_perturbations,
+            perturbed_indices, state,
+        )
+        if result is not None:
+            return result
+
     else:
-        # Black-box: sentence importance → word importance (paper Section IV-B)
+        # ── Algorithm 3: Black-box — iterate sentences in importance order ─
         sent_scores = sentence_importance(model_wrapper, text)
-        if len(sent_scores) > 1:
-            # Multi-sentence: focus on the most important sentence
-            top_sent_idx, top_sent_text, _ = sent_scores[0]
-            logger.info("TextBugger: black-box sentence importance → sentence %d", top_sent_idx)
-            importance = _simple_delete_one_importance(model_wrapper, top_sent_text)
-            # Offset word indices to match positions in the full text
-            # Use character offset: find where the sentence starts in the full text
-            sent_char_offset = text.find(top_sent_text)
+        logger.info("TextBugger: black-box, %d sentence(s) to process", len(sent_scores))
+
+        for sent_rank, (sent_idx, sent_text, _sent_score) in enumerate(sent_scores):
+            if state[0] >= max_perturbations:
+                break
+            if model_wrapper.query_count >= max_queries:
+                logger.warning("TextBugger: query budget exhausted (%d queries)", max_queries)
+                break
+
+            logger.info("TextBugger: processing sentence %d (rank %d)", sent_idx, sent_rank)
+
+            word_importance = _simple_delete_one_importance(model_wrapper, sent_text)
+
+            sent_char_offset = text.find(sent_text)
             if sent_char_offset < 0:
-                sent_char_offset = 0  # fallback: assume start
+                sent_char_offset = 0
             full_words = get_words_and_spans(text)
             word_offset = 0
-            for i, (_fw, fs, _fe) in enumerate(full_words):
+            for wi, (_fw, fs, _fe) in enumerate(full_words):
                 if fs >= sent_char_offset:
-                    word_offset = i
+                    word_offset = wi
                     break
-            importance = [(idx + word_offset, score) for idx, score in importance]
-        else:
-            importance = _simple_delete_one_importance(model_wrapper, text)
-        logger.info("TextBugger: using black-box delete-one importance")
+            importance = [(idx + word_offset, score) for idx, score in word_importance]
 
-    orig_label, orig_conf, _ = model_wrapper.predict(text)
+            result = _attack_with_importance(
+                model_wrapper, text, words_spans, importance,
+                orig_label, orig_label_idx, f_y_x, target_label, strategy,
+                similarity_threshold, max_queries, max_perturbations,
+                perturbed_indices, state,
+            )
+            if result is not None:
+                return result
 
-    current_text = text
-    perturbations_made = 0
-    perturbed_indices: set[int] = set()  # RepeatModification guard
+    logger.info("TextBugger: finished (%d perturbations)", state[0])
+    return state[1]
+
+
+def _attack_with_importance(
+    model_wrapper, original_text, words_spans, importance,
+    orig_label, orig_label_idx, f_y_x, target_label, strategy,
+    similarity_threshold, max_queries, max_perturbations,
+    perturbed_indices, state,
+) -> "str | None":
+    """Greedy perturbation loop shared by white-box and black-box modes.
+
+    For each word in importance order, generates all applicable bug types,
+    evaluates each candidate, and selects the one that minimizes F_y(x')
+    (the true-class probability). Returns the adversarial text immediately
+    on misclassification success, or None if the loop exhausts all words.
+
+    ``state`` is [perturbations_made, current_text] — mutated in-place so
+    that the caller sees updated counts across sentence iterations.
+    """
+    from utils.text_utils import get_words_and_spans, replace_word_at, is_stopword
+    from utils.text_constraints import compute_semantic_similarity
 
     for word_idx, score in importance:
-        if perturbations_made >= max_perturbations:
+        if state[0] >= max_perturbations:
             break
 
-        # RepeatModification: skip already-perturbed words
         if word_idx in perturbed_indices:
             continue
 
@@ -365,95 +415,64 @@ def run_textbugger(
         if is_stopword(word):
             continue
 
-        # Try each perturbation type, pick the one with greatest impact
+        current_text = state[1]
         best_text = None
-        best_impact = -1.0
+        best_f_y = f_y_x
 
-        # Character-level bugs: Insert, Delete, Swap, Sub-C (homoglyphs + keyboard)
+        candidates_to_eval = []
+
         if strategy in ["bug", "combined"]:
             for perturb_fn in _CHARACTER_PERTURBATION_FNS:
                 perturbed_word = perturb_fn(word)
                 current_spans = get_words_and_spans(current_text)
                 if word_idx >= len(current_spans):
                     break
-                # Guard against stale indices after word-boundary changes
                 if current_spans[word_idx][0] != words_spans[word_idx][0]:
                     continue
-
                 candidate = replace_word_at(current_text, word_idx, perturbed_word)
+                candidates_to_eval.append(candidate)
 
-                # Semantic similarity constraint
-                from utils.text_constraints import compute_semantic_similarity
-                if compute_semantic_similarity(text, candidate) < similarity_threshold:
-                    continue
-
-                # Query budget constraint
-                if model_wrapper.query_count >= max_queries:
-                    logger.warning("TextBugger: query budget exhausted (%d queries)", max_queries)
-                    return current_text
-
-                label, conf, _ = model_wrapper.predict(candidate)
-
-                if target_label is not None:
-                    if label.lower() == target_label.lower():
-                        logger.info("TextBugger: success at perturbation %d", perturbations_made + 1)
-                        return candidate
-                else:
-                    if label != orig_label:
-                        logger.info("TextBugger: success at perturbation %d", perturbations_made + 1)
-                        return candidate
-
-                impact = orig_conf - conf
-                if impact > best_impact:
-                    best_impact = impact
-                    best_text = candidate
-
-        # Word-level: Sub-W — embedding neighbours (paper: GloVe, k=5)
         if strategy in ["word", "combined"]:
             synonyms = _substitute_word_embedding(
                 word, max_candidates=5, context_text=current_text, position=word_idx
             )
-
             for synonym in synonyms:
                 current_spans = get_words_and_spans(current_text)
                 if word_idx >= len(current_spans):
                     break
-                # Guard against stale indices
                 if current_spans[word_idx][0] != words_spans[word_idx][0]:
                     continue
-
                 candidate = replace_word_at(current_text, word_idx, synonym)
+                candidates_to_eval.append(candidate)
 
-                # Semantic similarity constraint
-                from utils.text_constraints import compute_semantic_similarity
-                if compute_semantic_similarity(text, candidate) < similarity_threshold:
-                    continue
+        for candidate in candidates_to_eval:
+            if compute_semantic_similarity(original_text, candidate) < similarity_threshold:
+                continue
 
-                # Query budget constraint
-                if model_wrapper.query_count >= max_queries:
-                    logger.warning("TextBugger: query budget exhausted (%d queries)", max_queries)
-                    return current_text
+            if model_wrapper.query_count >= max_queries:
+                logger.warning("TextBugger: query budget exhausted (%d queries)", max_queries)
+                return state[1] if state[0] > 0 else None
 
-                label, conf, _ = model_wrapper.predict(candidate)
+            label, conf, _ = model_wrapper.predict(candidate)
 
-                if target_label is not None:
-                    if label.lower() == target_label.lower():
-                        logger.info("TextBugger: success at perturbation %d", perturbations_made + 1)
-                        return candidate
-                else:
-                    if label != orig_label:
-                        logger.info("TextBugger: success at perturbation %d", perturbations_made + 1)
-                        return candidate
+            if target_label is not None:
+                if label.lower() == target_label.lower():
+                    logger.info("TextBugger: success at perturbation %d", state[0] + 1)
+                    return candidate
+            else:
+                if label != orig_label:
+                    logger.info("TextBugger: success at perturbation %d", state[0] + 1)
+                    return candidate
 
-                impact = orig_conf - conf
-                if impact > best_impact:
-                    best_impact = impact
-                    best_text = candidate
+            cand_probs = model_wrapper.predict_probs(candidate)
+            f_y_cand = cand_probs[orig_label_idx] if orig_label_idx < len(cand_probs) else conf
+            if f_y_cand < best_f_y:
+                best_f_y = f_y_cand
+                best_text = candidate
 
         if best_text is not None:
-            current_text = best_text
-            perturbations_made += 1
+            state[1] = best_text
+            state[0] += 1
             perturbed_indices.add(word_idx)
 
-    logger.info("TextBugger: finished (%d perturbations)", perturbations_made)
-    return current_text
+    return None
