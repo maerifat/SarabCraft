@@ -171,13 +171,17 @@ def run_hotflip(
 ) -> str:
     """HotFlip attack (white-box gradient-based token substitution).
 
-    100% compliant with Ebrahimi et al. 2018 and the TextAttack
-    HotFlipEbrahimi2017 recipe:
+    Exact match with TextAttack HotFlipEbrahimi2017 recipe
+    (Ebrahimi et al. 2018, arXiv:1712.06751):
 
     Transformation — WordSwapGradientBased(top_n=1):
-      - First-order Taylor approximation for flip scoring
-      - Global top-1 candidate selection: flatten [positions × vocab] score
-        matrix, find the single best (position, token) swap
+      - Cross-entropy loss gradient w.r.t. input embeddings
+        (matching TextAttack HuggingFaceModelWrapper.get_grad)
+      - First-order Taylor approximation: diffs = E @ grad − (E @ grad)[cur]
+      - lookup_table via model.get_input_embeddings().weight.data
+      - Mask only pad_token_id
+      - Global top-1 candidate: flatten [positions × vocab], argsort,
+        filter has_letter + single-word, pick first valid
 
     Search — BeamSearch(beam_width=10):
       - Each beam candidate produces exactly 1 expansion (top-1)
@@ -190,6 +194,8 @@ def run_hotflip(
       - Post-transformation: MaxWordsPerturbed(2),
         WordEmbeddingDistance(min_cos_sim=0.8, counter-fitted GloVe),
         PartOfSpeech
+
+    Extension beyond TextAttack: targeted attack support via target_label.
 
     Returns: adversarial text (str).
     """
@@ -217,14 +223,7 @@ def run_hotflip(
     orig_label, orig_conf, orig_label_idx = model_wrapper.predict(text)
 
     embedding_layer = model.get_input_embeddings()
-    embedding_weight = embedding_layer.weight          # [vocab_size, hidden_dim]
-
-    # Build the set of token IDs that must never be used as replacements
-    special_ids = set(tokenizer.all_special_ids)
-    for attr in ("pad_token_id", "unk_token_id", "mask_token_id"):
-        tid = getattr(tokenizer, attr, None)
-        if tid is not None:
-            special_ids.add(tid)
+    embedding_weight = embedding_layer.weight.data     # [vocab_size, hidden_dim]
 
     # ── Initialise beam ──────────────────────────────────────────────────
     init_inputs = tokenizer(
@@ -280,12 +279,17 @@ def run_hotflip(
             logits = outputs.logits
 
             if target_idx is not None:
-                # Targeted: maximise target class logit
-                loss = -logits[0, target_idx]
+                # Targeted: minimise cross-entropy w.r.t. target → negate
+                loss = -torch.nn.functional.cross_entropy(
+                    logits,
+                    torch.tensor([target_idx], device=logits.device),
+                )
             else:
-                # Untargeted: decrease the predicted-class logit.
-                pred_idx = logits.argmax(dim=-1).item()
-                loss = -logits[0, pred_idx]
+                # Untargeted: maximise cross-entropy w.r.t. predicted class
+                # (matching TextAttack HuggingFaceModelWrapper.get_grad:
+                #  labels = logits.argmax(dim=1); loss = model(..., labels=labels).loss)
+                pred_idx = logits.argmax(dim=-1)
+                loss = torch.nn.functional.cross_entropy(logits, pred_idx)
 
             loss.backward()
             grad = embed_out.grad[0]  # [seq_len, hidden_dim]
@@ -306,14 +310,9 @@ def run_hotflip(
                 a_grad = b_grads[input_ids[0, pos]]
                 diffs[j] = b_grads - a_grad
 
-            # Mask out special tokens (TextAttack only masks pad_token_id,
-            # but we mask all specials for safety — strictly more conservative)
-            for sid in special_ids:
-                diffs[:, sid] = float("-inf")
-
-            # Mask the current token at each position (can't flip to itself)
-            for j, pos in enumerate(eligible_positions):
-                diffs[j, input_ids[0, pos]] = float("-inf")
+            # Mask pad token (matching TextAttack WordSwapGradientBased:
+            # diffs[:, self.tokenizer.pad_token_id] = float("-inf"))
+            diffs[:, tokenizer.pad_token_id] = float("-inf")
 
             # ── Global top-1 selection (matching top_n=1) ────────────
             # Flatten, argsort, pick the single best valid (position, token)
@@ -323,11 +322,6 @@ def run_hotflip(
             for flat_idx in flat_sorted.tolist():
                 j_idx = flat_idx // vocab_size
                 t_id = flat_idx % vocab_size
-
-                # The score for this candidate
-                score = diffs[j_idx, t_id].item()
-                if score <= 0:
-                    break  # remaining are all non-improving
 
                 pos = eligible_positions[j_idx]
                 new_token_str = tokenizer.decode([t_id]).strip()
