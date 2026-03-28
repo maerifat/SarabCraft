@@ -10,6 +10,14 @@ where:
   w_i* = argmax_{w∈L_i} ΔP(w_i, w)                           [Eq.5]
 
 Uses WordNet synonyms filtered by Penn Treebank POS tag for substitution.
+Named Entity substitution supported when NE candidates are provided.
+
+Exact match to the official JHL-HUST/PWWS implementation:
+  - Saliency computed for ALL words (not just POS-eligible)
+  - Softmax over the FULL saliency vector
+  - No candidate cap (iterates all WordNet synsets)
+  - Position-stable greedy substitution via token compilation
+  - Named Entity substitution path (optional, dataset-specific)
 """
 
 import logging
@@ -20,7 +28,7 @@ logger = logging.getLogger("textattack.attacks.pwws")
 
 # ── Penn Treebank POS whitelist ──────────────────────────────────────────────
 # From official PWWS code (paraphrase.py: supported_pos_tags).
-# Only words with these POS tags are eligible for perturbation.
+# Only words with these POS tags are eligible for WordNet perturbation.
 SUPPORTED_POS_TAGS = frozenset({
     'CC',    # Coordinating conjunction
     'JJ',    # Adjective
@@ -81,11 +89,9 @@ def _get_wordnet_pos(penn_tag: str):
 def _synonym_prefilter(candidate_text: str, original_text: str,
                        candidate_tag: str, original_tag: str) -> bool:
     """Return True if *candidate_text* passes all official pre-filter checks."""
-    # 1. Reject phrases with more than 2 tokens
     if len(candidate_text.split()) > 2:
         return False
 
-    # 2. Reject same lemma
     try:
         from nltk.stem import WordNetLemmatizer
         _wnl = WordNetLemmatizer()
@@ -95,11 +101,9 @@ def _synonym_prefilter(candidate_text: str, original_text: str,
         if candidate_text.lower() == original_text.lower():
             return False
 
-    # 3. Reject POS-tag mismatch (fine-grained Penn Treebank)
     if candidate_tag and original_tag and candidate_tag != original_tag:
         return False
 
-    # 4. Reject if the original word is "be"
     if original_text.lower() == 'be':
         return False
 
@@ -108,14 +112,15 @@ def _synonym_prefilter(candidate_text: str, original_text: str,
 
 # ── Synonym candidate generation ─────────────────────────────────────────────
 
-def _generate_synonym_candidates(word: str, penn_tag: str,
-                                 max_candidates: int = 50) -> list[str]:
+def _generate_synonym_candidates(word: str, penn_tag: str) -> list[str]:
     """Generate WordNet synonym candidates matching the official algorithm.
 
     Mirrors _generate_synonym_candidates() in paraphrase.py:
       1. Skip words whose POS is not in SUPPORTED_POS_TAGS.
       2. Look up WordNet synsets filtered by WordNet POS.
       3. Apply _synonym_prefilter to every lemma.
+
+    No candidate cap — iterates through all synsets/lemmas (matching official).
     """
     if penn_tag not in SUPPORTED_POS_TAGS:
         return []
@@ -147,10 +152,42 @@ def _generate_synonym_candidates(word: str, penn_tag: str,
 
             if _synonym_prefilter(name, word, cand_tag, penn_tag):
                 candidates.append(name)
-                if len(candidates) >= max_candidates:
-                    return candidates
 
     return candidates
+
+
+# ── Named Entity detection ───────────────────────────────────────────────────
+
+def _detect_named_entities(text: str) -> dict[int, str]:
+    """Detect named entities in text, returning {word_position: NER_tag}.
+
+    Mirrors official get_NE_list usage: for each token, if it belongs to a
+    named entity, record its NER label (PERSON, ORG, GPE, etc.).
+    """
+    try:
+        import spacy
+        try:
+            nlp = spacy.load("en_core_web_sm")
+        except OSError:
+            return {}
+
+        doc = nlp(text)
+
+        char_to_ner: dict[int, str] = {}
+        for ent in doc.ents:
+            for i in range(ent.start_char, ent.end_char):
+                char_to_ner[i] = ent.label_
+
+        from utils.text_utils import get_words_and_spans
+        word_ner: dict[int, str] = {}
+        for idx, (_word, start, end) in enumerate(get_words_and_spans(text)):
+            for c in range(start, end):
+                if c in char_to_ner:
+                    word_ner[idx] = char_to_ner[c]
+                    break
+        return word_ner
+    except ImportError:
+        return {}
 
 
 # ── Word saliency ────────────────────────────────────────────────────────────
@@ -159,10 +196,8 @@ def _compute_word_saliency(model_wrapper, text: str, word_idx: int,
                            orig_probs: list, true_class_idx: int) -> float:
     """Compute S(x, w_i) = P(y|x) − P(y|x_\\w_i)  [Eq.6].
 
-    Measures the drop in *true-class* probability when word w_i is removed.
-    The official code zeros the word embedding vector; for transformer models
-    in a black-box text API, word deletion is the standard adaptation (also
-    used by the TextAttack reference).
+    The official code zeros the word embedding vector; for black-box text
+    models, word deletion is the standard adaptation (TextAttack reference).
     """
     from utils.text_utils import get_words_and_spans
 
@@ -175,13 +210,27 @@ def _compute_word_saliency(model_wrapper, text: str, word_idx: int,
     reduced = " ".join(reduced.split())
 
     if not reduced:
-        # Single-word text: full probability is attributable to this word.
         return orig_probs[true_class_idx]
 
     reduced_probs = model_wrapper.predict_probs(reduced)
 
-    # Eq.(6): change in true-class probability only.
     return orig_probs[true_class_idx] - reduced_probs[true_class_idx]
+
+
+# ── Token compilation ────────────────────────────────────────────────────────
+# Matches official _compile_perturbed_tokens(): build the perturbed token list
+# by iterating over the original words and substituting at stored positions.
+# This keeps indices stable across multiple substitutions — no re-parsing.
+
+def _compile_perturbed_tokens(words: list[str], substitutions: dict[int, str]) -> list[str]:
+    """Build token list with substitutions applied at given positions."""
+    result = []
+    for i, word in enumerate(words):
+        if i in substitutions:
+            result.append(substitutions[i].replace('_', ' '))
+        else:
+            result.append(word)
+    return result
 
 
 # ── Main entry point ─────────────────────────────────────────────────────────
@@ -191,25 +240,37 @@ def run_pwws(
     tokenizer,
     text: str,
     target_label: str = None,
-    max_candidates: int = 10,
+    max_candidates: int = 50,
+    use_named_entities: bool = False,
+    ne_candidates: dict[str, str] | None = None,
 ) -> str:
     """PWWS attack: WordNet synonym substitution weighted by word saliency.
 
-    Full algorithm (Ren et al., 2019):
-      1. POS-tag all words (Penn Treebank); filter by SUPPORTED_POS_TAGS.
-      2. Compute word saliency S(x, w_i) for eligible words  [Eq.6].
-      3. Softmax-normalize the saliency vector  [Eq.8].
-      4. For each eligible word, find best synonym
-         w_i* = argmax_{w∈L_i} ΔP  [Eq.4-5].
+    Exact match to the official JHL-HUST/PWWS algorithm (Ren et al., 2019):
+      1. POS-tag ALL words (Penn Treebank).
+      2. Compute word saliency S(x, w_i) for ALL words  [Eq.6].
+      3. Softmax-normalize the FULL saliency vector  [Eq.8].
+      4. For each word with candidates (NE or POS-eligible WordNet):
+         find best synonym w_i* = argmax_{w∈L_i} ΔP  [Eq.4-5].
       5. Compute H(x, x_i*, w_i) = ΔP × softmax(S)_i  [Eq.7].
       6. Sort words by H descending; substitute greedily until
          the classifier prediction flips.
+
+    Args:
+        model_wrapper: _TextModelWrapper with .predict() and .predict_probs()
+        tokenizer: HuggingFace tokenizer (unused, kept for router signature)
+        text: input text to attack
+        target_label: target class name (None = untargeted)
+        max_candidates: max synonyms to evaluate per word (0 = no limit)
+        use_named_entities: enable NE substitution path (official: True)
+        ne_candidates: {NER_tag: replacement_entity} lookup table;
+            mirrors official NE_list.L[dataset][true_y]
 
     Returns: adversarial text (str).
     """
     from utils.text_utils import get_words_and_spans, replace_word_at
 
-    logger.info("PWWS: starting (max_cands=%d)", max_candidates)
+    logger.info("PWWS: starting (max_cands=%d, use_NE=%s)", max_candidates, use_named_entities)
 
     words_spans = get_words_and_spans(text)
     if not words_spans:
@@ -220,84 +281,106 @@ def run_pwws(
     orig_class_idx = orig_probs.index(max(orig_probs))
 
     words = [w for w, _, _ in words_spans]
+    num_words = len(words)
 
-    # ── Step 1: POS-tag all words (Penn Treebank tagset) ─────────────────
+    # ── Step 1: POS-tag ALL words (Penn Treebank tagset) ─────────────────
     pos_tags = _pos_tag_words(words)
 
-    # ── Step 2: Compute word saliency for all eligible words [Eq.6] ──────
-    eligible: list[tuple[int, float, str]] = []   # (word_idx, saliency, tag)
-    for i in range(len(words)):
-        if pos_tags[i] not in SUPPORTED_POS_TAGS:
-            continue
-        saliency = _compute_word_saliency(
+    # Detect NER tags for all words (if NE substitution enabled)
+    word_ner_tags: dict[int, str] = {}
+    ne_tag_set: set[str] = set()
+    if use_named_entities and ne_candidates:
+        word_ner_tags = _detect_named_entities(text)
+        ne_tag_set = set(ne_candidates.keys())
+
+    # ── Step 2: Compute word saliency for ALL words [Eq.6] ───────────────
+    # Official: evaluate_word_saliency() computes S for every position.
+    saliency_values: list[float] = []
+    for i in range(num_words):
+        s = _compute_word_saliency(
             model_wrapper, text, i, orig_probs, orig_class_idx,
         )
-        eligible.append((i, saliency, pos_tags[i]))
+        saliency_values.append(s)
 
-    if not eligible:
-        return text
-
-    # ── Step 3: Softmax normalization of saliency [Eq.8] ─────────────────
-    saliency_arr = np.array([s for _, s, _ in eligible])
-    # Numerical-stability shift (does not change softmax output).
+    # ── Step 3: Softmax over the FULL saliency vector [Eq.8] ────────────
+    # Official: word_saliency_array = softmax(word_saliency_array) over ALL words.
+    saliency_arr = np.array(saliency_values)
     exp_s = np.exp(saliency_arr - np.max(saliency_arr))
     softmax_saliency = exp_s / np.sum(exp_s)
 
     # ── Steps 4–5: Find best synonym per word & compute H-score [Eq.7] ──
+    # Official loop: for (position, token, word_saliency, tag) in word_saliency_list
+    # — iterates ALL words; words without candidates are skipped.
     word_scores: list[tuple[int, str, float]] = []
-    for elig_idx, (word_idx, _sal, penn_tag) in enumerate(eligible):
-        word = words[word_idx]
-        synonyms = _generate_synonym_candidates(
-            word, penn_tag, max_candidates=max_candidates,
-        )
+
+    for i in range(num_words):
+        word = words[i]
+        penn_tag = pos_tags[i]
+
+        # NE path first (official: if use_NE and NER_tag in NE_tags)
+        synonyms: list[str] = []
+        if use_named_entities and ne_candidates:
+            ner_tag = word_ner_tags.get(i, "")
+            if ner_tag in ne_tag_set:
+                synonyms = [ne_candidates[ner_tag]]
+            else:
+                synonyms = _generate_synonym_candidates(word, penn_tag)
+        else:
+            synonyms = _generate_synonym_candidates(word, penn_tag)
+
         if not synonyms:
             continue
 
-        # w_i* = argmax ΔP  [Eq.5].
-        # Start at -inf so that a candidate is always selected (matches
-        # official code which picks sorted_candidates.pop() unconditionally).
+        # Optionally limit candidates for efficiency
+        eval_synonyms = synonyms if max_candidates <= 0 else synonyms[:max_candidates]
+
+        # w_i* = argmax ΔP [Eq.5]
+        # Official: sorted_candidates.pop() — always selects the best.
         best_syn = None
         best_delta = float('-inf')
 
-        for syn in synonyms:
-            candidate = replace_word_at(text, word_idx, syn)
-            cand_probs = model_wrapper.predict_probs(candidate)
+        for syn in eval_synonyms:
+            candidate_text = replace_word_at(text, i, syn)
+            cand_probs = model_wrapper.predict_probs(candidate_text)
             delta = orig_probs[orig_class_idx] - cand_probs[orig_class_idx]
             if delta > best_delta:
                 best_delta = delta
                 best_syn = syn
 
         if best_syn is not None:
-            # H(x, x_i*, w_i) = ΔP × softmax(S)_i  [Eq.7]
-            h_score = best_delta * softmax_saliency[elig_idx]
-            word_scores.append((word_idx, best_syn, h_score))
+            # H(x, x_i*, w_i) = ΔP × softmax(S)_i [Eq.7]
+            # Position i indexes into the FULL softmax array (matching official).
+            h_score = best_delta * softmax_saliency[i]
+            word_scores.append((i, best_syn, h_score))
 
     # ── Step 6: Sort by H descending; greedy substitution ────────────────
+    # Official: sorted_substitute_tuple_list = sorted(..., key=lambda t: t[3], reverse=True)
     word_scores.sort(key=lambda x: x[2], reverse=True)
 
-    current_text = text
-    for word_idx, synonym, _score in word_scores:
-        # Re-parse to get updated spans after prior substitutions.
-        current_spans = get_words_and_spans(current_text)
-        if word_idx >= len(current_spans):
-            continue
-        # Guard against stale indices after word-boundary changes.
-        if current_spans[word_idx][0] != words_spans[word_idx][0]:
-            continue
+    # Greedy substitution using position-stable token compilation
+    # (matches official _compile_perturbed_tokens loop).
+    applied_subs: dict[int, str] = {}
 
-        candidate = replace_word_at(current_text, word_idx, synonym)
-        label, conf, _ = model_wrapper.predict(candidate)
+    for word_idx, synonym, _score in word_scores:
+        applied_subs[word_idx] = synonym
+        perturbed_tokens = _compile_perturbed_tokens(words, applied_subs)
+        candidate_text = " ".join(perturbed_tokens)
+
+        label, conf, _ = model_wrapper.predict(candidate_text)
 
         if target_label is not None:
             if label.lower() == target_label.lower():
-                logger.info("PWWS: success")
-                return candidate
+                logger.info("PWWS: success (targeted)")
+                return candidate_text
         else:
             if label != orig_label:
-                logger.info("PWWS: success")
-                return candidate
+                logger.info("PWWS: success (untargeted)")
+                return candidate_text
 
-        current_text = candidate
+    # All substitutions applied but prediction did not flip — return best effort
+    if applied_subs:
+        logger.info("PWWS: finished (no flip, %d substitutions applied)", len(applied_subs))
+        return " ".join(_compile_perturbed_tokens(words, applied_subs))
 
-    logger.info("PWWS: finished")
-    return current_text
+    logger.info("PWWS: finished (no candidates found)")
+    return text

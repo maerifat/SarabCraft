@@ -167,7 +167,8 @@ TEXT_ATTACK_DISPATCH = {
 
     "PWWS": lambda w, tok, txt, tgt, p:
         run_pwws(w, tok, txt, tgt,
-            _p(p, "max_candidates", 10, int)),
+            _p(p, "max_candidates", 50, int),
+            bool(p.get("use_named_entities", False))),
 
     "Alzantot GA": lambda w, tok, txt, tgt, p:
         run_alzantot_ga(w, tok, txt, tgt,
