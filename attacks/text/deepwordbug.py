@@ -42,13 +42,14 @@ def _swap_adjacent(word: str) -> list[str]:
 def _substitute_char(word: str) -> list[str]:
     """Replace one random character with a *different* random letter.
 
-    Matches official flip() — avoids replacing with the same character:
+    Exact logic from official flip():
+        letter = ord(word[s])
         rletter = randint(0,24)+97; if rletter >= letter: rletter += 1
     """
     if not word:
         return []
     i = random.randint(0, len(word) - 1)
-    letter = ord(word[i].lower())
+    letter = ord(word[i])
     rletter = random.randint(0, 24) + 97          # 25 values: a(97)…y(121)
     if rletter >= letter:
         rletter += 1                                # skip original letter
@@ -76,14 +77,15 @@ def _insert_char(word: str) -> list[str]:
 def _homoglyph(word: str) -> list[str]:
     """Replace one random character with its Unicode homoglyph.
 
-    Exact mapping from official QData/deepWordBug transformer.py.
-    This is the most effective transformer in the paper.
+    Exact logic from official QData/deepWordBug transformer.py:
+        if word[s] in homos: rletter = homos[word[s]]
+        else:                rletter = word[s]
     """
     if not word:
         return []
     i = random.randint(0, len(word) - 1)
     ch = word[i]
-    replacement = HOMOGLYPHS.get(ch, HOMOGLYPHS.get(ch.lower(), ch))
+    replacement = HOMOGLYPHS.get(ch, ch)
     candidate = word[:i] + replacement + word[i + 1:]
     if candidate == word:
         return []
@@ -128,9 +130,9 @@ def _replaceone_importance(model_wrapper, text: str) -> list[tuple[int, float]]:
     if not words_spans:
         return []
 
-    _, _, orig_label_idx = model_wrapper.predict(text)
     orig_probs = model_wrapper.predict_probs(text)
-    orig_conf = orig_probs[orig_label_idx] if orig_label_idx < len(orig_probs) else 0.0
+    orig_label_idx = orig_probs.index(max(orig_probs))
+    orig_conf = orig_probs[orig_label_idx]
 
     scores = []
     for i, (word, start, end) in enumerate(words_spans):

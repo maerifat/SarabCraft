@@ -171,17 +171,21 @@ def temporal_head_importance(
     num_words = len(words)
 
     # Compute confidence on each prefix x_1:i
+    # Also capture num_classes from the probability vector (the official code
+    # receives this as a parameter; we derive it from the first query).
     prefix_confs = []
+    num_classes = 0
     for i in range(num_words):
         prefix = " ".join(words[: i + 1])
         if not prefix:
             prefix_confs.append(0.0)
             continue
         probs = model_wrapper.predict_probs(prefix)
+        if i == 0:
+            num_classes = len(probs)
         prefix_confs.append(probs[orig_label_idx] if orig_label_idx < len(probs) else 0.0)
 
     # THS(0) = prefix_conf[0] - 1/num_classes (uniform baseline)
-    num_classes = len(model_wrapper.predict_probs(text))
     baseline = 1.0 / num_classes if num_classes > 0 else 0.0
 
     scores = []
@@ -226,17 +230,21 @@ def temporal_tail_importance(
     num_words = len(words)
 
     # Compute confidence on each suffix x_i:n
+    # Also capture num_classes from the probability vector (the official code
+    # receives this as a parameter; we derive it from the first query).
     suffix_confs = []
+    num_classes = 0
     for i in range(num_words):
         suffix = " ".join(words[i:])
         if not suffix:
             suffix_confs.append(0.0)
             continue
         probs = model_wrapper.predict_probs(suffix)
+        if i == 0:
+            num_classes = len(probs)
         suffix_confs.append(probs[orig_label_idx] if orig_label_idx < len(probs) else 0.0)
 
     # TTS(last) = suffix_conf[last] - 1/num_classes
-    num_classes = len(model_wrapper.predict_probs(text))
     baseline = 1.0 / num_classes if num_classes > 0 else 0.0
 
     scores = []
