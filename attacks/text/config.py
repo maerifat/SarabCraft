@@ -107,12 +107,19 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Jin et al.",
         "year": 2020,
         "arxiv": "1907.11932",
-        "desc": "Word importance ranking (delete-one, two-case formula) → counter-fitted embedding "
-                "neighbours (BERT-MLM fallback) → filtered by word-embedding cosine ≥ δ, strict POS "
-                "match, and sentence-level semantic similarity (distilUSE) ≥ threshold.",
+        "desc": "Exact match to TextAttack TextFoolerJin2019 recipe. "
+                "GreedyWordSwapWIR(delete): two-case word importance formula. "
+                "WordSwapEmbedding(max_candidates=50): counter-fitted PARAGRAM-SL999 "
+                "(BERT-MLM fallback). Constraints: RepeatModification, "
+                "StopwordModification (official 280-word list), "
+                "WordEmbeddingDistance(min_cos_sim=0.5), "
+                "PartOfSpeech(allow_verb_noun_swap=True), "
+                "UniversalSentenceEncoder(threshold=0.840845, metric=angular, "
+                "compare_against_original=False, window_size=15, "
+                "skip_text_shorter_than_window=True).",
         "params": {
             "max_candidates": {"type": "int", "default": 50, "min": 5, "max": 200, "step": 5},
-            "similarity_threshold": {"type": "float", "default": 0.84, "min": 0.5, "max": 1.0, "step": 0.01},
+            "similarity_threshold": {"type": "float", "default": 0.840845057, "min": 0.5, "max": 1.0, "step": 0.01},
             "embedding_cos_threshold": {"type": "float", "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05},
             "max_perturbation_ratio": {"type": "float", "default": 0.3, "min": 0.05, "max": 1.0, "step": 0.05},
         },

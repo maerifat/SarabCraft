@@ -26,13 +26,11 @@ def delete_one_importance(model_wrapper, text: str, original_label: str = None) 
         return []
 
     if original_label is None:
-        original_label, orig_conf, _ = model_wrapper.predict(text)
+        original_label, orig_conf, orig_label_idx = model_wrapper.predict(text)
     else:
-        _, orig_conf, _ = model_wrapper.predict(text)
+        _, orig_conf, orig_label_idx = model_wrapper.predict(text)
 
-    # Get original probability vector for two-case formula
     orig_probs = model_wrapper.predict_probs(text)
-    _, _, orig_label_idx = model_wrapper.predict(text)
 
     scores = []
     for i, (word, start, end) in enumerate(words_spans):
