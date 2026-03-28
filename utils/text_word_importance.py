@@ -3,7 +3,7 @@ Word importance scoring: determines which words to perturb first.
 
 Two strategies:
   - delete_one_importance: black-box, measures confidence drop when word removed
-  - gradient_importance: white-box, L2 norm of gradient w.r.t. each token embedding
+  - gradient_importance: white-box, L1 norm of gradient w.r.t. each token embedding
 """
 
 import torch
@@ -298,9 +298,9 @@ def gradient_importance(model, tokenizer, text: str, target_index: int = None) -
     """Score word importance using Jacobian of classifier confidence (white-box).
 
     Computes J_i = ∂F_y(x)/∂x_i (paper notation) where F_y is the softmax
-    probability for the true class y.  Gradient L2 norms over subword token
-    embeddings are aggregated to word-level scores so that returned indices
-    align with the word positions from ``get_words_and_spans(text)``.
+    probability for the true class y.  Uses L1 norm of the gradient vector
+    per token, with mean aggregation across subwords to produce word-level
+    scores — matching the original TextBugger paper and TextAttack reference.
 
     Args:
         model: HuggingFace model (requires gradient computation)
@@ -314,12 +314,11 @@ def gradient_importance(model, tokenizer, text: str, target_index: int = None) -
     """
     from models.text_loader import device
 
-    # Tokenize WITH offset mapping so we can align subwords → words
     tok_out = tokenizer(
         text, return_tensors="pt", truncation=True, max_length=512,
         return_offsets_mapping=True,
     )
-    offset_mapping = tok_out.pop("offset_mapping")[0].tolist()  # list of (start, end)
+    offset_mapping = tok_out.pop("offset_mapping")[0].tolist()
     inputs = {k: v.to(device) for k, v in tok_out.items()}
 
     embeddings = model.get_input_embeddings()
@@ -328,46 +327,49 @@ def gradient_importance(model, tokenizer, text: str, target_index: int = None) -
     embed_out.requires_grad_(True)
     embed_out.retain_grad()
 
-    # Forward pass through remaining layers
     outputs = model(inputs_embeds=embed_out, attention_mask=inputs.get("attention_mask"))
     logits = outputs.logits
 
     if target_index is None:
         target_index = logits.argmax(dim=-1).item()
 
-    # Paper: J_i = ∂F_y(x)/∂x_i — F_y is the softmax probability (confidence)
     probs = torch.softmax(logits, dim=-1)
     confidence = probs[0, target_index]
     confidence.backward()
 
-    # L2 norm of gradient for each subword token position
     grad = embed_out.grad[0]  # [seq_len, hidden_dim]
-    token_norms = grad.norm(dim=-1).detach().cpu().tolist()  # [seq_len]
+    token_norms = grad.norm(p=1, dim=-1).detach().cpu().tolist()
 
-    # Build word-level spans from get_words_and_spans
     words_spans = get_words_and_spans(text)
 
-    # Aggregate subword gradient norms → word-level scores
     word_scores = [0.0] * len(words_spans)
+    word_subword_counts = [0] * len(words_spans)
     for tok_idx, (char_start, char_end) in enumerate(offset_mapping):
         if char_start == 0 and char_end == 0:
-            continue  # skip special tokens ([CLS], [SEP], [PAD])
-        # Find which word this subword belongs to
+            continue
         for word_idx, (_word, w_start, w_end) in enumerate(words_spans):
             if char_start >= w_start and char_end <= w_end:
                 word_scores[word_idx] += token_norms[tok_idx]
+                word_subword_counts[word_idx] += 1
                 break
 
-    scores = [(i, s) for i, s in enumerate(word_scores)]
+    scores = [
+        (i, s / max(c, 1))
+        for i, (s, c) in enumerate(zip(word_scores, word_subword_counts))
+    ]
     scores.sort(key=lambda x: x[1], reverse=True)
     return scores
 
 
 def sentence_importance(model_wrapper, text: str) -> list[tuple[int, str, float]]:
-    """Score each sentence's importance by removing it and measuring confidence drop.
+    """Rank sentences by importance — TextBugger black-box Algorithm 3.
 
-    Part of the TextBugger black-box algorithm (Li et al., 2018): first rank
-    sentences, then score words within the most important sentence.
+    Paper specification (Li et al., 2018, Section IV-B):
+      1. Split document into sentences (spaCy).
+      2. Filter: keep only sentences where F_label(s_i) == y (the sentence's
+         own predicted label matches the document label).
+      3. Rank remaining sentences by F_y(s_i) in descending order — higher
+         confidence means the sentence contributes more to the prediction.
 
     Args:
         model_wrapper: _TextModelWrapper with .predict() method
@@ -378,25 +380,47 @@ def sentence_importance(model_wrapper, text: str) -> list[tuple[int, str, float]
         importance descending.  Returns a single-element list if the text
         contains only one sentence.
     """
-    import re
-    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-    sentences = [s for s in sentences if s.strip()]
+    sentences = _split_sentences(text)
 
     if len(sentences) <= 1:
         return [(0, text, 1.0)]
 
-    orig_label, orig_conf, _ = model_wrapper.predict(text)
+    orig_label, orig_conf, orig_label_idx = model_wrapper.predict(text)
 
     scores = []
     for i, sent in enumerate(sentences):
-        reduced = " ".join(s for j, s in enumerate(sentences) if j != i).strip()
-        if not reduced:
-            scores.append((i, sent, orig_conf))
+        sent_label, _, _ = model_wrapper.predict(sent)
+        if sent_label != orig_label:
             continue
-        _, conf_after, _ = model_wrapper.predict(reduced)
-        importance = orig_conf - conf_after
-        scores.append((i, sent, importance))
+
+        sent_probs = model_wrapper.predict_probs(sent)
+        f_y_si = sent_probs[orig_label_idx] if orig_label_idx < len(sent_probs) else 0.0
+        scores.append((i, sent, f_y_si))
+
+    if not scores:
+        scores = [(i, sent, 0.0) for i, sent in enumerate(sentences)]
 
     scores.sort(key=lambda x: x[2], reverse=True)
     return scores
+
+
+def _split_sentences(text: str) -> list[str]:
+    """Split text into sentences using spaCy (preferred) or regex fallback."""
+    try:
+        import spacy
+        try:
+            nlp = spacy.load("en_core_web_sm", disable=["ner", "lemmatizer"])
+        except OSError:
+            nlp = spacy.blank("en")
+            nlp.add_pipe("sentencizer")
+        doc = nlp(text.strip())
+        sentences = [sent.text.strip() for sent in doc.sents if sent.text.strip()]
+        if sentences:
+            return sentences
+    except ImportError:
+        pass
+
+    import re
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    return [s for s in sentences if s.strip()]
 
