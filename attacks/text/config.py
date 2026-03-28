@@ -171,12 +171,17 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Ren et al.",
         "year": 2019,
         "arxiv": "1907.06292",
-        "desc": "Probability Weighted Word Saliency: H = ΔP × softmax(S), where "
-                "S = P(y|x) − P(y|x\\w). WordNet synonyms filtered by Penn Treebank "
-                "POS whitelist with pre-filter (multi-word, lemma, POS match). "
-                "Greedy substitution in descending H-score order.",
+        "desc": "Exact match to official JHL-HUST/PWWS. Saliency S = P(y|x) − P(y|x\\w) "
+                "computed for ALL words; softmax over the FULL saliency vector; "
+                "H = ΔP × softmax(S). WordNet synonyms filtered by Penn Treebank POS "
+                "whitelist with pre-filter (multi-word, lemma, POS match, 'be'). "
+                "Position-stable greedy substitution in descending H-score order. "
+                "Optional Named Entity substitution path (dataset-specific NE lists).",
         "params": {
-            "max_candidates": {"type": "int", "default": 10, "min": 1, "max": 50, "step": 1},
+            "max_candidates": {"type": "int", "default": 50, "min": 0, "max": 200, "step": 5,
+                               "desc": "Max synonyms evaluated per word (0 = no limit, matching official)"},
+            "use_named_entities": {"type": "bool", "default": False,
+                                   "desc": "Enable Named Entity substitution (requires NE candidate list)"},
         },
     },
     "Alzantot GA": {
