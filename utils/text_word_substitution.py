@@ -134,7 +134,7 @@ def get_mlm_substitutions(
 def get_bert_attack_substitutions(
     text: str,
     top_k: int = 48,
-    threshold_pred_score: float = 0.0,
+    threshold_pred_score: float = 3.0,
     use_bpe: bool = True,
     mlm_model_name: str = DEFAULT_MLM_MODEL,
 ) -> list[list[str]]:
@@ -154,7 +154,7 @@ def get_bert_attack_substitutions(
         text: original input text
         top_k: number of candidate tokens per position (paper default: 48)
         threshold_pred_score: minimum MLM logit score cutoff for single-token
-            words (official default: 0.0, paper Section 5.1)
+            words (official default: 3.0 in logit space, per get_substitues())
         use_bpe: if True, handle multi-subword words via BPE combination;
             if False, skip multi-subword words (official --use_bpe flag)
         mlm_model_name: pretrained MLM to use

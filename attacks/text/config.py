@@ -134,12 +134,13 @@ TEXT_ATTACK_REGISTRY = {
         "desc": "Feeds ORIGINAL (unmasked) text into BERT MLM and reads predictions at all "
                 "positions simultaneously — core innovation vs BAE. Word importance via [UNK] "
                 "replacement. Sub-word aware: Cartesian product of per-position top-k predictions "
-                "ranked by perplexity for multi-subword words. Official filter_words list (~240 words). "
+                "ranked by perplexity for multi-subword words. Official filter_words list (~300 words), "
+                "applied to both source words and candidate substitutions. "
                 "No inline semantic similarity (official uses post-hoc USE evaluation).",
         "params": {
             "max_candidates": {"type": "int", "default": 48, "min": 5, "max": 200, "step": 5},
             "max_perturbation_ratio": {"type": "float", "default": 0.4, "min": 0.05, "max": 1.0, "step": 0.05},
-            "threshold_pred_score": {"type": "float", "default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05},
+            "threshold_pred_score": {"type": "float", "default": 3.0, "min": 0.0, "max": 10.0, "step": 0.5},
             "use_bpe": {"type": "bool", "default": True},
         },
     },
@@ -154,12 +155,12 @@ TEXT_ATTACK_REGISTRY = {
                 "Insert (I): insert [MASK] left or right and fill, R/I: pick best "
                 "single operation, R+I: sequential replace then insert. POS filter "
                 "(allow verb↔noun swap), windowed USE similarity (window=15, "
-                "threshold=0.8). Delete (D) is a SarabCraft extension not in the "
+                "threshold=0.936338023). Delete (D) is a SarabCraft extension not in the "
                 "original paper.",
         "params": {
             "strategy": {"type": "select", "default": "R", "options": ["R", "I", "R/I", "R+I", "D"]},
             "max_candidates": {"type": "int", "default": 50, "min": 5, "max": 200, "step": 5},
-            "similarity_threshold": {"type": "float", "default": 0.8, "min": 0.5, "max": 1.0, "step": 0.05},
+            "similarity_threshold": {"type": "float", "default": 0.936338023, "min": 0.5, "max": 1.0, "step": 0.01},
             "max_perturbation_ratio": {"type": "float", "default": 0.5, "min": 0.1, "max": 1.0, "step": 0.05},
         },
     },

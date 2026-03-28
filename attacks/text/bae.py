@@ -12,7 +12,8 @@ Reference: TextAttack bae_garg_2019.py
   - Transformation: WordSwapMaskedLM(method="bae", max_candidates=50)
   - Constraints: RepeatModification, StopwordModification,
                  PartOfSpeech(allow_verb_noun_swap=True),
-                 UniversalSentenceEncoder(threshold≈0.8, window_size=15,
+                 UniversalSentenceEncoder(threshold=0.936338023,
+                     metric="cosine", window_size=15,
                      compare_against_original=True,
                      skip_text_shorter_than_window=True)
   - Search: GreedyWordSwapWIR(wir_method="delete")
@@ -250,7 +251,7 @@ def run_bae(
     target_label: str = None,
     strategy: str = "R",
     max_candidates: int = 50,
-    similarity_threshold: float = 0.8,
+    similarity_threshold: float = 0.936338023,
     max_perturbation_ratio: float = 0.5,
 ) -> str:
     """BAE attack with configurable strategy.
