@@ -259,7 +259,6 @@ def check_lm_constraint(
     """
     model, _ = _get_lm()
     if model is None:
-        # If LM unavailable, warn and allow (same as TextAttack fallback)
         logger.warning(
             "LM constraint skipped: GPT-2 model unavailable. "
             "Install transformers and download gpt2 for full compliance."
@@ -275,9 +274,56 @@ def check_lm_constraint(
     ref_log_prob = _get_lm_log_prob(orig_window, orig_word)
     cand_log_prob = _get_lm_log_prob(cand_window, cand_word)
 
-    # Reject if candidate log-prob drops by more than threshold
-    # Matches: if transformed_prob <= ref_prob - max_log_prob_diff: return False
     if cand_log_prob <= ref_log_prob - max_log_prob_diff:
         return False
 
     return True
+
+
+def score_lm_candidates(
+    current_words: list[str],
+    position: int,
+    candidates: list[str],
+    top_n: int = 4,
+    window_size: int = 6,
+) -> list[str]:
+    """Rank candidates by LM log-probability and return the top N.
+
+    Matches TextAttack Google1BillionWordsLanguageModel(top_n_per_index=4,
+    compare_against_original=False): for each candidate substitution at
+    `position`, score the resulting window under the LM and keep only the
+    `top_n` highest-scoring candidates.
+
+    Args:
+        current_words: word list of the *current* individual (not original)
+            because compare_against_original=False in the Alzantot recipe.
+        position: word index being substituted.
+        candidates: list of candidate replacement words.
+        top_n: number of candidates to retain (paper: K=4).
+        window_size: LM context window size.
+
+    Returns:
+        Up to `top_n` candidates sorted by descending LM score.
+        Returns all candidates unfiltered if LM is unavailable.
+    """
+    model, _ = _get_lm()
+    if model is None:
+        logger.warning(
+            "LM ranking skipped: GPT-2 model unavailable. "
+            "Install transformers and download gpt2 for full compliance."
+        )
+        return candidates[:top_n] if len(candidates) > top_n else candidates
+
+    if len(candidates) <= top_n:
+        return candidates
+
+    scored: list[tuple[str, float]] = []
+    for cand_word in candidates:
+        cand_words_list = list(current_words)
+        cand_words_list[position] = cand_word
+        cand_window = _text_window_around_index(cand_words_list, position, window_size)
+        lp = _get_lm_log_prob(cand_window, cand_word)
+        scored.append((cand_word, lp))
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [w for w, _ in scored[:top_n]]

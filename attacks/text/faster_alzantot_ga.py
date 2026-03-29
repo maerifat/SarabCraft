@@ -22,7 +22,6 @@ Reference: TextAttack FasterGeneticAlgorithmJia2019 recipe.
 
 import random
 import logging
-import math
 
 import numpy as np
 
@@ -53,7 +52,10 @@ def run_faster_alzantot_ga(
         population_size: number of individuals (paper: S=60).
         max_generations: number of generations (paper: 40).
         mutation_rate: probability of mutating a child (paper: always=1.0).
-        similarity_threshold: sentence-level semantic similarity gate.
+        similarity_threshold: unused — retained for API compatibility.
+            Quality is enforced by word-level constraints (embedding
+            distance, LM constraint, stopwords, repeat modification,
+            20% perturbation budget) matching the official recipe.
         require_embeddings: if True, raise error when counter-fitted word
             vectors are unavailable (prevents silent degradation to MLM).
 
@@ -63,7 +65,7 @@ def run_faster_alzantot_ga(
         get_words_and_spans, replace_word_at, replace_words_at, is_stopword, clean_word,
     )
     from utils.text_word_substitution import get_embedding_neighbours_with_scores
-    from utils.text_constraints import compute_semantic_similarity, check_lm_constraint
+    from utils.text_constraints import check_lm_constraint
 
     logger.info("Faster Alzantot GA: starting (pop=%d, gen=%d, temp=0.3)",
                 population_size, max_generations)
@@ -165,15 +167,30 @@ def run_faster_alzantot_ga(
     # Cache original-text untargeted index to avoid redundant calls
     _orig_prob_cache = {}
 
+    # Matches TextAttack GeneticAlgorithm._search_over: set True when any
+    # candidate achieves goal success during fitness evaluation, enabling
+    # immediate termination mid-perturb and mid-generation.
+    _search_over = [False]
+
+    def _goal_succeeded(predicted_label: str) -> bool:
+        if resolved_target is not None:
+            return predicted_label.lower() == resolved_target.lower()
+        return predicted_label != orig_label
+
     def fitness(candidate_text: str) -> tuple[float, str]:
         """Optimised fitness: caches the original-class index.
 
         Returns (fitness_score, predicted_label).
+        Sets _search_over[0] = True if goal is achieved (matches TextAttack
+        get_goal_results → GoalFunctionResultStatus.SUCCEEDED).
         """
         probs = model_wrapper.predict_probs(candidate_text)
         predicted_idx = probs.index(max(probs))
         id2label = getattr(model_wrapper.model.config, 'id2label', {})
         predicted_label = id2label.get(predicted_idx, str(predicted_idx))
+
+        if _goal_succeeded(predicted_label):
+            _search_over[0] = True
 
         if resolved_target is not None:
             # Targeted: maximise target class confidence
@@ -227,6 +244,8 @@ def run_faster_alzantot_ga(
             if pos not in sub_cache:
                 weights[pos] = 0
                 attempts += 1
+                if _search_over[0]:
+                    break
                 continue
 
             # Evaluate all candidates, pick best-improvement
@@ -251,6 +270,10 @@ def run_faster_alzantot_ga(
             # No improvement at this position — zero it out and retry
             weights[pos] = 0
             attempts += 1
+
+            # Matches TextAttack: break retry loop when goal achieved
+            if _search_over[0]:
+                break
 
         return individual_text, modified_indices, ind_num_cand
 
@@ -278,19 +301,14 @@ def run_faster_alzantot_ga(
 
         best_text, best_fitness, best_label, best_modified, best_num_cand = scored[0]
 
-        # ── Check success ───────────────────────────────────────────
-        if resolved_target is not None:
-            if best_label.lower() == resolved_target.lower():
-                sim = compute_semantic_similarity(text, best_text)
-                if sim >= similarity_threshold:
-                    logger.info("Faster Alzantot GA: success at generation %d", gen + 1)
-                    return best_text
-        else:
-            if best_label != orig_label:
-                sim = compute_semantic_similarity(text, best_text)
-                if sim >= similarity_threshold:
-                    logger.info("Faster Alzantot GA: success at generation %d", gen + 1)
-                    return best_text
+        # ── Check success (matches TextAttack GoalFunctionResultStatus) ─
+        # Stop when _search_over (set during child generation) or best
+        # member achieves goal. No similarity gate — quality is ensured
+        # by word-level constraints (embedding distance, LM, stopwords,
+        # repeat modification, 20% budget).
+        if _search_over[0] or _goal_succeeded(best_label):
+            logger.info("Faster Alzantot GA: success at generation %d", gen + 1)
+            return best_text
 
         if gen % 5 == 0:
             logger.debug("Faster Alzantot GA: gen %d/%d, best_fitness=%.4f",
@@ -346,6 +364,15 @@ def run_faster_alzantot_ga(
                         child_modified.discard(j)
             child = replace_words_at(p1_text, swaps) if swaps else p1_text
 
+            # Evaluate crossover child (matches TextAttack _crossover →
+            # get_goal_results: sets _search_over if goal achieved)
+            fitness(child)
+            if _search_over[0]:
+                new_population.append(child)
+                new_pop_modified.append(child_modified)
+                new_pop_num_cand.append(child_num_cand)
+                break
+
             # ── Mutation: best-improvement ─────────────────────────
             # Paper: always mutate (mutation_rate=1.0)
             if random.random() < mutation_rate:
@@ -356,6 +383,10 @@ def run_faster_alzantot_ga(
             new_population.append(child)
             new_pop_modified.append(child_modified)
             new_pop_num_cand.append(child_num_cand)
+
+            # Matches TextAttack: _search_over check after _perturb
+            if _search_over[0]:
+                break
 
         population = new_population
         pop_modified_indices = new_pop_modified
