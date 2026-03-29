@@ -92,8 +92,12 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Pruthi et al.",
         "year": 2019,
         "arxiv": "1905.11268",
-        "desc": "Simulates common typos: swap adjacent characters, delete characters, insert characters, "
-                "and substitute characters with adjacent QWERTY keyboard keys. Practical real-world attack.",
+        "desc": "Faithful to the original paper and TextAttack Pruthi2019 recipe. "
+                "Four character-level typo operations — swap adjacent, delete, insert (random a-z), "
+                "QWERTY keyboard substitution (4-directional adjacency) — applied only to internal "
+                "characters (first and last preserved, matching the psycholinguistic constraint). "
+                "Constraints: MinWordLength(4), StopwordModification, RepeatModification, "
+                "MaxWordsPerturbed. GreedySearch over all candidates per step.",
         "params": {
             "max_perturbations": {"type": "int", "default": 1, "min": 1, "max": 10, "step": 1},
         },

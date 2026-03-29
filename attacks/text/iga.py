@@ -129,6 +129,10 @@ def run_iga(
         return filtered
 
     # ── Fitness function ────────────────────────────────────────────────
+    # Matches TextAttack GeneticAlgorithm._search_over: set True when any
+    # candidate achieves goal success during fitness evaluation, enabling
+    # immediate termination mid-perturb and mid-generation.
+    _search_over = [False]
     _orig_idx_cache = {}
 
     def fitness(candidate_text: str) -> tuple[float, str]:
@@ -141,6 +145,9 @@ def run_iga(
         predicted_idx = probs.index(max(probs))
         id2label = getattr(model_wrapper.model.config, 'id2label', {})
         predicted_label = id2label.get(predicted_idx, str(predicted_idx))
+
+        if is_success(predicted_label):
+            _search_over[0] = True
 
         if resolved_target is not None:
             if resolved_target_idx is not None and resolved_target_idx < len(probs):
@@ -248,6 +255,9 @@ def run_iga(
             if index is not None:
                 break
 
+            if _search_over[0]:
+                break
+
         return ind_text, nrl, modified_indices
 
     # ── Initialize population ───────────────────────────────────────────
@@ -307,7 +317,8 @@ def run_iga(
         pop_labels = [pop_labels[i] for i in order]
 
         # Check success (best individual)
-        if is_success(pop_labels[0]):
+        # Matches TextAttack: _search_over or goal status SUCCEEDED
+        if _search_over[0] or is_success(pop_labels[0]):
             logger.info("IGA: success at generation %d", gen + 1)
             return population[0]
 
@@ -370,6 +381,17 @@ def run_iga(
 
             child_text = replace_words_at(population[p1_i], swaps) if swaps else population[p1_i]
 
+            # Evaluate crossover child (matches TextAttack _crossover →
+            # get_goal_results: sets _search_over if goal achieved)
+            cross_score, cross_label = fitness(child_text)
+            if _search_over[0]:
+                children.append(child_text)
+                children_nrl.append(child_nrl)
+                children_modified.append(child_mod)
+                children_scores.append(cross_score)
+                children_labels.append(cross_label)
+                break
+
             # ── Mutation: best-improvement perturbation ─────────────
             # TextAttack: always mutate (no mutation_rate parameter)
             child_text, child_nrl, child_mod = perturb(
@@ -384,10 +406,9 @@ def run_iga(
             children_scores.append(score)
             children_labels.append(label)
 
-            # Check for early success
-            if is_success(label):
-                logger.info("IGA: success at generation %d (during breeding)", gen + 1)
-                return child_text
+            # Matches TextAttack: _search_over check after _perturb
+            if _search_over[0]:
+                break
 
         # ── Elitism: population = [best] + children ─────────────────
         # Matches TextAttack: population = [population[0]] + children
