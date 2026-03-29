@@ -15,29 +15,34 @@ logger = logging.getLogger("textattack.attacks.back_translation")
 _DEFAULT_TARGET_MODEL = "Helsinki-NLP/opus-mt-en-ROMANCE"   # en → ROMANCE
 _DEFAULT_SRC_MODEL = "Helsinki-NLP/opus-mt-ROMANCE-en"       # ROMANCE → en
 
+# Core ROMANCE pivot languages for single-pivot diversity.
+# These are the high-resource languages in the opus-mt-en-ROMANCE model;
+# each produces a distinct paraphrase due to different translation paths.
+_ROMANCE_PIVOT_LANGS = ["es", "fr", "it", "pt", "ro", "ca", "gl"]
+
 _translation_cache = {}
 
 
 def _load_translation_model(model_name: str):
-    """Lazy-load MarianMT translation model."""
+    """Lazy-load MarianMT translation model.
+
+    Raises on failure so callers can surface meaningful diagnostics
+    instead of silently returning the original text.
+    """
     if model_name in _translation_cache:
         return _translation_cache[model_name]
 
-    try:
-        from transformers import MarianMTModel, MarianTokenizer
-        import torch
+    from transformers import MarianMTModel, MarianTokenizer
+    import torch
 
-        logger.info("Loading translation model: %s", model_name)
-        tok = MarianTokenizer.from_pretrained(model_name)
-        model = MarianMTModel.from_pretrained(model_name)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model.to(device)
-        model.eval()
-        _translation_cache[model_name] = (model, tok, device)
-        return model, tok, device
-    except Exception as e:
-        logger.warning("Failed to load translation model %s: %s", model_name, e)
-        return None
+    logger.info("Loading translation model: %s", model_name)
+    tok = MarianTokenizer.from_pretrained(model_name)
+    model = MarianMTModel.from_pretrained(model_name)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    model.eval()
+    _translation_cache[model_name] = (model, tok, device)
+    return model, tok, device
 
 
 def _translate(text: str, model_name: str, lang: str = "en") -> str:
@@ -49,19 +54,13 @@ def _translate(text: str, model_name: str, lang: str = "en") -> str:
     """
     import torch
 
-    result = _load_translation_model(model_name)
-    if result is None:
-        return text
-
-    model, tok, device = result
+    model, tok, device = _load_translation_model(model_name)
 
     # Language tag handling matching TextAttack BackTranslation.translate()
     if lang == "en":
         src_text = text
     else:
-        # Matching TextAttack: if ">>" and "<<" not in lang
-        # (prepend >>lang<< tag for ROMANCE models)
-        if ">>" and "<<" not in lang:
+        if ">>" not in lang and "<<" not in lang:
             lang = ">>" + lang + "<< "
         src_text = lang + text
 
@@ -79,10 +78,7 @@ def _get_supported_language_codes(model_name: str = _DEFAULT_TARGET_MODEL) -> li
 
     Used by chained back-translation to randomly sample pivot languages.
     """
-    result = _load_translation_model(model_name)
-    if result is None:
-        return []
-    _, tok, _ = result
+    _, tok, _ = _load_translation_model(model_name)
     return list(getattr(tok, "supported_language_codes", []))
 
 
@@ -141,6 +137,12 @@ def run_back_translation(
     filters by semantic similarity, and returns the first paraphrase
     that flips the model prediction (or the highest-impact candidate).
 
+    In single-pivot mode (chained_back_translation=0), each attempt uses
+    a different ROMANCE pivot language to produce diverse candidates —
+    matching the diversity that TextAttack's search methods achieve by
+    calling _get_transformations repeatedly across the transformation
+    space.
+
     Args:
         model_wrapper: wrapped target model with predict() interface.
         tokenizer: HuggingFace tokenizer (passed by router, not used directly).
@@ -162,17 +164,46 @@ def run_back_translation(
 
     orig_label, orig_conf, _ = model_wrapper.predict(text)
 
+    # Build the pivot language schedule for single-pivot mode.
+    # The user-specified target_lang is tried first, then we rotate through
+    # other ROMANCE languages so each attempt produces a distinct paraphrase
+    # (MarianMT greedy decoding is deterministic for a given pivot).
+    pivot_schedule: list[str] = []
+    if chained_back_translation == 0:
+        pivot_schedule = [target_lang]
+        for lang in _ROMANCE_PIVOT_LANGS:
+            if lang != target_lang:
+                pivot_schedule.append(lang)
+
     best_text = text
     best_impact = 0.0
-    seen = set()
+    seen: set[str] = set()
+    consecutive_load_failures = 0
 
     for i in range(num_paraphrases):
         try:
-            paraphrase = _paraphrase_via_translation(
-                text,
-                target_lang=target_lang,
-                chained_back_translation=chained_back_translation,
-            )
+            if chained_back_translation > 0:
+                paraphrase = _paraphrase_via_translation(
+                    text,
+                    target_lang=target_lang,
+                    chained_back_translation=chained_back_translation,
+                )
+            else:
+                pivot = pivot_schedule[i % len(pivot_schedule)]
+                paraphrase = _paraphrase_via_translation(
+                    text, target_lang=pivot,
+                )
+            consecutive_load_failures = 0
+        except (ImportError, OSError) as e:
+            consecutive_load_failures += 1
+            logger.error("Back-Translation: translation model failed to load: %s", e)
+            if consecutive_load_failures >= 2:
+                raise RuntimeError(
+                    f"Back-Translation failed: cannot load MarianMT translation models. "
+                    f"Ensure 'sentencepiece' is installed (pip install sentencepiece) "
+                    f"and the model can be downloaded. Original error: {e}"
+                ) from e
+            continue
         except Exception as e:
             logger.warning("Back-Translation: paraphrase %d failed: %s", i + 1, e)
             continue
@@ -189,11 +220,13 @@ def run_back_translation(
 
         if target_label is not None:
             if label.lower() == target_label.lower():
-                logger.info("Back-Translation: success at attempt %d", i + 1)
+                logger.info("Back-Translation: success at attempt %d (%s)",
+                            i + 1, pivot_schedule[i % len(pivot_schedule)] if pivot_schedule else "chained")
                 return paraphrase
         else:
             if label != orig_label:
-                logger.info("Back-Translation: success at attempt %d", i + 1)
+                logger.info("Back-Translation: success at attempt %d (%s)",
+                            i + 1, pivot_schedule[i % len(pivot_schedule)] if pivot_schedule else "chained")
                 return paraphrase
 
         impact = orig_conf - conf
@@ -201,5 +234,5 @@ def run_back_translation(
             best_impact = impact
             best_text = paraphrase
 
-    logger.info("Back-Translation: finished")
+    logger.info("Back-Translation: finished (%d unique candidates evaluated)", len(seen))
     return best_text

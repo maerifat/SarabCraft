@@ -17,4 +17,5 @@ google-cloud-vision>=3.12.1
 pg8000==1.31.5
 redis==7.1.0
 sentence-transformers>=2.2.0
+sentencepiece>=0.1.99
 nltk>=3.8.0
