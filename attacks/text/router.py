@@ -60,6 +60,27 @@ class _TextModelWrapper:
             probs = torch.softmax(outputs.logits, dim=-1)[0]
         return probs.cpu().tolist()
 
+    def predict_probs_batch(self, texts: list[str], batch_size: int = 32) -> list[list[float]]:
+        """Batched probability prediction — tokenizes and runs forward pass
+        in chunks of ``batch_size`` for much higher throughput."""
+        import torch
+        from models.text_loader import device
+
+        all_probs: list[list[float]] = []
+        for start in range(0, len(texts), batch_size):
+            chunk = texts[start:start + batch_size]
+            self.query_count += len(chunk)
+            inputs = self.tokenizer(
+                chunk, return_tensors="pt", truncation=True,
+                max_length=512, padding=True,
+            )
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                probs = torch.softmax(outputs.logits, dim=-1)
+            all_probs.extend(probs.cpu().tolist())
+        return all_probs
+
     def predict_batch(self, texts: list[str]) -> list[tuple[str, float, int]]:
         """Batch prediction. Each query counts."""
         return [self.predict(t) for t in texts]
@@ -96,6 +117,11 @@ class _CancelableTextModelWrapper:
         if self.should_cancel and self.should_cancel():
             raise AttackCancelledError("Attack cancelled")
         return self.wrapped.predict_probs(text)
+
+    def predict_probs_batch(self, texts: list[str], batch_size: int = 32) -> list[list[float]]:
+        if self.should_cancel and self.should_cancel():
+            raise AttackCancelledError("Attack cancelled")
+        return self.wrapped.predict_probs_batch(texts, batch_size)
 
     def predict_batch(self, texts: list[str]) -> list[tuple[str, float, int]]:
         if self.should_cancel and self.should_cancel():
