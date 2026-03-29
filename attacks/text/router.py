@@ -176,7 +176,7 @@ TEXT_ATTACK_DISPATCH = {
             _p(p, "max_generations", 20, int),
             _p(p, "mutation_rate", 1.0),
             _p(p, "similarity_threshold", 0.8),
-            _p(p, "require_embeddings", False, bool)),
+            _p(p, "require_embeddings", True, bool)),
 
     "Faster Alzantot GA": lambda w, tok, txt, tgt, p:
         run_faster_alzantot_ga(w, tok, txt, tgt,
@@ -184,7 +184,7 @@ TEXT_ATTACK_DISPATCH = {
             _p(p, "max_generations", 40, int),
             _p(p, "mutation_rate", 1.0),
             _p(p, "similarity_threshold", 0.8),
-            _p(p, "require_embeddings", False, bool)),
+            _p(p, "require_embeddings", True, bool)),
 
     "IGA": lambda w, tok, txt, tgt, p:
         run_iga(w, tok, txt, tgt,

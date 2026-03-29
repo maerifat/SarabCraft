@@ -251,13 +251,13 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Zang et al.",
         "year": 2020,
         "arxiv": "2004.14641",
-        "desc": "100% compliant with TextAttack PSOZang2020 recipe and ParticleSwarmOptimization "
+        "desc": "Compliant with TextAttack PSOZang2020 recipe and ParticleSwarmOptimization "
                 "search method. Discrete velocity via equality function (±V_max=3.0), sigmoid turn "
                 "probability, two-phase movement (local/global elite), adaptive ω/C1/C2 schedules, "
                 "mutation via best-improvement neighbour replacement, query budget enforcement "
                 "(mirrors TextAttack _search_over). Constraints: RepeatModification, "
-                "StopwordModification. Paper uses sememe-based substitution (HowNet); this "
-                "implementation uses MLM candidates. "
+                "StopwordModification. Transformation: HowNet sememe-based substitution "
+                "(WordSwapHowNet) with automatic MLM fallback when the synonym bank is unavailable. "
                 "Paper defaults: pop_size=60, max_iters=20, ω₁=0.8, ω₂=0.2.",
         "params": {
             "pop_size": {"type": "int", "default": 60, "min": 5, "max": 200, "step": 5},

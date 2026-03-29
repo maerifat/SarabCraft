@@ -4,8 +4,11 @@ PSO (Particle Swarm Optimization) — Zang et al., 2020 (arXiv:2004.14641)
 Treats adversarial text generation as combinatorial optimization.
 Uses particle swarm optimization with word substitution.
 
-100% compliant reimplementation of the TextAttack ParticleSwarmOptimization
+Compliant reimplementation of the TextAttack ParticleSwarmOptimization
 search method and PSOZang2020 recipe (https://github.com/QData/TextAttack).
+
+Transformation: WordSwapHowNet (sememe-based) with MLM fallback.
+Constraints: RepeatModification, StopwordModification.
 
 Key hyperparameters from the paper (tuned on SST validation set):
   - ω₁ = 0.8, ω₂ = 0.2  (inertia weight, linearly decayed)
@@ -71,9 +74,13 @@ def run_pso(
 ) -> str:
     """Particle Swarm Optimization attack.
 
-    100% compliant implementation of Zang et al. (2020) following the
+    Compliant implementation of Zang et al. (2020) following the
     TextAttack ``ParticleSwarmOptimization`` reference class and
     ``PSOZang2020`` recipe.
+
+    Transformation: HowNet sememe-based synonyms (``WordSwapHowNet``)
+    with automatic MLM fallback when the HowNet synonym bank is
+    unavailable.
 
     Args:
         model_wrapper: wrapped HF model with predict/predict_probs.
@@ -94,7 +101,9 @@ def run_pso(
     from utils.text_utils import (
         get_words_and_spans, replace_words_at, is_stopword, clean_word,
     )
-    from utils.text_word_substitution import get_mlm_substitutions
+    from utils.text_word_substitution import (
+        get_hownet_substitutions_for_text, get_mlm_substitutions,
+    )
 
     if seed is not None:
         np.random.seed(seed)
@@ -119,21 +128,42 @@ def run_pso(
         resolved_target = resolve_target_label(model_wrapper.model, target_label) or target_label
         resolved_target_idx = get_label_index(model_wrapper.model, resolved_target)
 
-    # Compute original probabilities ONCE (never re-queried inside fitness)
     orig_probs = model_wrapper.predict_probs(text)
     orig_pred_idx = orig_probs.index(max(orig_probs))
 
     # ── Pre-compute substitution candidates ──────────────────────────────
+    # Paper: WordSwapHowNet (sememe-based). Falls back to MLM if the
+    # HowNet synonym bank is not available.
     sub_cache: dict[int, list[str]] = {}
-    for i, word in enumerate(original_words):
-        if is_stopword(word) or len(clean_word(word)) <= 1:
-            continue
-        candidates = get_mlm_substitutions(text, i, top_k=30)
-        if candidates:
-            sub_cache[i] = candidates
+
+    hownet_cache = get_hownet_substitutions_for_text(original_words)
+    using_hownet = bool(hownet_cache)
+
+    if using_hownet:
+        logger.info("PSO: using HowNet sememe-based substitutions (paper-compliant)")
+        for i, cands in hownet_cache.items():
+            if is_stopword(original_words[i]) or len(clean_word(original_words[i])) <= 1:
+                continue
+            if cands:
+                sub_cache[i] = cands
+    else:
+        logger.info("PSO: HowNet unavailable, falling back to MLM substitutions")
+        for i, word in enumerate(original_words):
+            if is_stopword(word) or len(clean_word(word)) <= 1:
+                continue
+            candidates = get_mlm_substitutions(text, i, top_k=30)
+            if candidates:
+                sub_cache[i] = candidates
 
     if not sub_cache:
         return text
+
+    # ── Query-budget tracking (mirrors TextAttack _search_over) ──────────
+    _search_over = [False]
+
+    def _check_budget():
+        if max_queries and model_wrapper.query_count >= max_queries:
+            _search_over[0] = True
 
     # ── Helper: build text from word list ────────────────────────────────
     def _build_text(word_list):
@@ -145,9 +175,14 @@ def run_pso(
 
     # ── Fitness function ─────────────────────────────────────────────────
     def _fitness(word_list):
-        """Returns (score, predicted_label, is_success)."""
+        """Returns (score, predicted_label, is_success).
+
+        Also checks query budget (sets _search_over, matching TextAttack
+        get_goal_results behaviour).
+        """
         candidate_text = _build_text(word_list)
         probs = model_wrapper.predict_probs(candidate_text)
+        _check_budget()
         predicted_idx = probs.index(max(probs))
         id2label = getattr(model_wrapper.model.config, 'id2label', {})
         predicted_label = id2label.get(predicted_idx, str(predicted_idx))
@@ -169,26 +204,27 @@ def run_pso(
         """For each word position, find the single substitution that yields
         the maximum score improvement.
 
-        Positions that are stopwords, too short, already modified from the
-        original (RepeatModification), or have no candidates return the
-        current state with score_diff = 0.
+        Matches TextAttack ParticleSwarmOptimization._get_best_neighbors():
+        evaluates ALL candidates at ALL positions (no early exit).
 
         Returns:
-            best_results: list[n_words] of (word_list, score)
+            best_results: list[n_words] of (word_list, score, success)
             prob_list:    np.array[n_words] probability distribution
         """
         best_results = []
         score_diffs = []
 
         for pos in range(n_words):
-            # RepeatModification: skip already-modified positions
+            # RepeatModification + StopwordModification: skip positions
+            # that are already modified or have no candidates
             if pos not in sub_cache or current_words[pos] != original_words[pos]:
-                best_results.append((list(current_words), current_score))
+                best_results.append((list(current_words), current_score, False))
                 score_diffs.append(0.0)
                 continue
 
             best_score = current_score
             best_words = list(current_words)
+            best_success = False
 
             for cand_word in sub_cache[pos]:
                 trial = list(current_words)
@@ -197,18 +233,19 @@ def run_pso(
                 if score > best_score:
                     best_score = score
                     best_words = trial
-                # Early exit if we already found a successful attack
-                if success:
-                    best_results.append((trial, score))
-                    score_diffs.append(max(0.0, score - current_score))
-                    # Fill remaining positions and return
-                    for _ in range(pos + 1, n_words):
-                        best_results.append((list(current_words), current_score))
-                        score_diffs.append(0.0)
-                    return best_results, _normalize(score_diffs)
+                    best_success = success
 
-            best_results.append((best_words, best_score))
-            score_diffs.append(max(0.0, best_score - current_score))
+                if _search_over[0]:
+                    break
+
+            best_results.append((best_words, best_score, best_success))
+            score_diffs.append(best_score - current_score)
+
+            if _search_over[0]:
+                for _ in range(pos + 1, n_words):
+                    best_results.append((list(current_words), current_score, False))
+                    score_diffs.append(0.0)
+                break
 
         return best_results, _normalize(score_diffs)
 
@@ -216,12 +253,10 @@ def run_pso(
     def _turn(source_words, target_words, turn_prob):
         """Move from *source* towards *target* probabilistically.
 
-        For each dimension d, with probability turn_prob[d] adopt
-        target_words[d]; otherwise keep source_words[d].
-
-        Includes post-turn constraint check (StopwordModification):
-        retries up to _MAX_TURN_RETRIES if the resulting text has
-        stopword positions modified from the original.
+        Post-turn constraint check matches TextAttack: verifies both
+        StopwordModification (stopwords unchanged) and RepeatModification
+        (only positions with candidates can be modified). Retries up to
+        _MAX_TURN_RETRIES times.
         """
         for _ in range(_MAX_TURN_RETRIES + 1):
             new_words = list(source_words)
@@ -229,18 +264,24 @@ def run_pso(
                 if np.random.uniform() < turn_prob[d]:
                     new_words[d] = target_words[d]
 
-            # Post-turn constraint: stopwords must stay original
-            ok = True
-            for d in range(n_words):
-                if new_words[d] != original_words[d] and (
-                    is_stopword(original_words[d]) or len(clean_word(original_words[d])) <= 1
-                ):
-                    ok = False
-                    break
-            if ok or new_words == source_words:
+            if new_words == source_words:
                 return new_words
 
-        # All retries failed — stay at source position
+            # Post-turn constraint: StopwordModification + RepeatModification
+            ok = True
+            for d in range(n_words):
+                if new_words[d] != original_words[d]:
+                    # StopwordModification: stopwords / short words must stay
+                    if is_stopword(original_words[d]) or len(clean_word(original_words[d])) <= 1:
+                        ok = False
+                        break
+                    # RepeatModification: only positions with candidates can change
+                    if d not in sub_cache:
+                        ok = False
+                        break
+            if ok:
+                return new_words
+
         return list(source_words)
 
     # ── Perturb / mutate (TextAttack _perturb) ───────────────────────────
@@ -250,29 +291,26 @@ def run_pso(
         Samples a position from the best-neighbor probability distribution
         and adopts that neighbour's word list.
 
-        Returns (new_word_list, new_score).
+        Returns (new_word_list, new_score, success).
         """
         best_results, prob_list = _get_best_neighbors(particle_words, current_score)
         chosen_idx = np.random.choice(len(best_results), p=prob_list)
-        new_words, new_score = best_results[chosen_idx]
+        new_words, new_score, success = best_results[chosen_idx]
         if new_words == particle_words:
-            return particle_words, current_score
-        return new_words, new_score
+            return particle_words, current_score, False
+        return new_words, new_score, success
 
     # ══════════════════════════════════════════════════════════════════════
     # INITIALIZATION
     # ══════════════════════════════════════════════════════════════════════
 
-    # Score the original
     orig_score, _, orig_success = _fitness(original_words)
     if orig_success:
         return text
 
-    # Best neighbors of original text (expensive but per-algorithm)
     best_results, prob_list = _get_best_neighbors(original_words, orig_score)
 
-    # Build initial population by sampling from best neighbors
-    population = []   # list of word-lists
+    population = []
     pop_scores = []
 
     for _ in range(pop_size):
@@ -282,12 +320,19 @@ def run_pso(
         population.append(particle_words)
         pop_scores.append(score)
 
-    # Check if any initial particle already succeeds
+    # Check if any initial particle already succeeds (matches TextAttack
+    # post-init check: global_elite.result.goal_status == SUCCEEDED)
     for k in range(pop_size):
         _, _, success = _fitness(population[k])
         if success:
             logger.info("PSO: success during initialization")
             return _build_text(population[k])
+
+    # Post-init _search_over check (matches TextAttack perform_search)
+    if _search_over[0]:
+        best_idx = int(np.argmax(pop_scores))
+        logger.info("PSO: query budget exhausted during initialization")
+        return _build_text(population[best_idx])
 
     # Velocities: [pop_size × n_words], initialised uniformly in [-V_max, V_max]
     v_init = np.random.uniform(-_V_MAX, _V_MAX, pop_size)
@@ -318,43 +363,38 @@ def run_pso(
 
         # ── Phase 1: Velocity & position update ─────────────────────────
         for k in range(pop_size):
-            # Velocity update (discrete adaptation)
             for d in range(n_words):
                 velocities[k][d] = omega * velocities[k][d] + (1 - omega) * (
                     _equal(population[k][d], local_elites[k][d])
                     + _equal(population[k][d], global_elite[d])
                 )
 
-            # Convert velocity → turn probability via sigmoid
             turn_prob = _sigmoid(velocities[k])
 
-            # Move towards local elite with probability P1
             if np.random.uniform() < P1:
                 population[k] = _turn(
                     local_elites[k], population[k], turn_prob
                 )
 
-            # Move towards global elite with probability P2
             if np.random.uniform() < P2:
                 population[k] = _turn(
                     global_elite, population[k], turn_prob
                 )
 
         # ── Phase 2: Evaluate all particles ──────────────────────────────
-        _search_over = False
         for k in range(pop_size):
             score, label, success = _fitness(population[k])
             pop_scores[k] = score
             if success:
                 logger.info("PSO: success at iteration %d", iteration + 1)
                 return _build_text(population[k])
-            if max_queries and model_wrapper.query_count >= max_queries:
-                _search_over = True
+            if _search_over[0]:
                 break
 
-        if _search_over:
+        top_k_idx = int(np.argmax(pop_scores))
+        if _search_over[0]:
             logger.info("PSO: query budget exhausted (%d queries)", model_wrapper.query_count)
-            return _build_text(global_elite)
+            return _build_text(population[top_k_idx])
 
         # ── Phase 3: Mutation (TextAttack _perturb) ──────────────────────
         for k in range(pop_size):
@@ -365,23 +405,25 @@ def run_pso(
             change_ratio = changed / n_words if n_words > 0 else 0.0
             p_change = 1.0 - 2.0 * change_ratio
             if np.random.uniform() < p_change:
-                new_words, new_score = _perturb(population[k], pop_scores[k])
+                new_words, new_score, _ = _perturb(population[k], pop_scores[k])
                 if new_words != population[k]:
                     population[k] = new_words
                     pop_scores[k] = new_score
-            if max_queries and model_wrapper.query_count >= max_queries:
-                _search_over = True
+            if _search_over[0]:
                 break
 
-        # Check for success after mutation
+        # Post-mutation success check (no redundant fitness call — uses
+        # scores already computed by _perturb → _get_best_neighbors)
         top_k_idx = int(np.argmax(pop_scores))
-        _, _, success = _fitness(population[top_k_idx])
-        if _search_over or success:
-            if success:
+        top_score, _, top_success = _fitness(population[top_k_idx])
+        pop_scores[top_k_idx] = top_score
+
+        if _search_over[0] or top_success:
+            if top_success:
                 logger.info("PSO: success at iteration %d (post-mutation)", iteration + 1)
-            else:
-                logger.info("PSO: query budget exhausted (%d queries)", model_wrapper.query_count)
-            return _build_text(population[top_k_idx] if success else global_elite)
+                return _build_text(population[top_k_idx])
+            logger.info("PSO: query budget exhausted (%d queries)", model_wrapper.query_count)
+            return _build_text(global_elite)
 
         # ── Phase 4: Update elites ───────────────────────────────────────
         for k in range(pop_size):
@@ -389,7 +431,6 @@ def run_pso(
                 local_elites[k] = list(population[k])
                 local_elite_scores[k] = pop_scores[k]
 
-        top_k_idx = int(np.argmax(pop_scores))
         if pop_scores[top_k_idx] > global_elite_score:
             global_elite = list(population[top_k_idx])
             global_elite_score = pop_scores[top_k_idx]

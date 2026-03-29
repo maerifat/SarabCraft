@@ -1,7 +1,8 @@
 """
 Word substitution sources for text adversarial attacks.
 
-Three strategies:
+Four strategies:
+  - HowNet sememe-based synonyms (PSO paper: Zang et al., 2020)
   - WordNet synonyms (NLTK)
   - BERT MLM masked predictions (universal fallback)
   - Counter-fitted embedding neighbours (when available)
@@ -17,6 +18,173 @@ logger = logging.getLogger("textattack.substitution")
 # Lazy-loaded MLM model for substitutions
 _mlm_model = None
 _mlm_tokenizer = None
+
+# Lazy-loaded HowNet synonym bank (TextAttack WordSwapHowNet)
+_hownet_bank = None
+_hownet_loaded = False
+
+
+def _load_hownet_bank():
+    """Lazy-load the HowNet sememe-based synonym bank.
+
+    Matches TextAttack ``WordSwapHowNet``: loads ``word_candidates_sense.pkl``
+    which maps ``{word_lower: {pos: [candidates]}}``.
+
+    Search order:
+      1. TextAttack cache (downloaded by textattack)
+      2. Well-known local paths
+    """
+    global _hownet_bank, _hownet_loaded
+    if _hownet_loaded:
+        return _hownet_bank
+    _hownet_loaded = True
+
+    import os
+    import pickle
+
+    candidate_paths = [
+        os.path.expanduser("~/.cache/textattack/word_candidates_sense.pkl"),
+        os.path.expanduser("~/.textattack/transformations/hownet/word_candidates_sense.pkl"),
+    ]
+
+    # Also search inside the textattack package's download cache
+    try:
+        import textattack
+        ta_dir = os.path.dirname(textattack.__file__)
+        candidate_paths.append(
+            os.path.join(ta_dir, "..", ".cache", "transformations", "hownet", "word_candidates_sense.pkl")
+        )
+    except ImportError:
+        pass
+
+    # Try textattack's download utility
+    try:
+        from textattack.shared import utils as ta_utils
+        cache_path = ta_utils.download_from_s3(
+            "transformations/hownet/word_candidates_sense.pkl"
+        )
+        if cache_path and os.path.isfile(cache_path):
+            candidate_paths.insert(0, cache_path)
+    except Exception:
+        pass
+
+    for path in candidate_paths:
+        path = os.path.normpath(path)
+        if os.path.isfile(path):
+            try:
+                logger.info("Loading HowNet synonym bank from %s", path)
+                with open(path, "rb") as fp:
+                    _hownet_bank = pickle.load(fp)
+                return _hownet_bank
+            except Exception as e:
+                logger.warning("Failed to load HowNet bank from %s: %s", path, e)
+                continue
+
+    logger.info(
+        "HowNet synonym bank not found — PSO will use MLM fallback. "
+        "Install textattack and run: python -c "
+        "\"from textattack.transformations import WordSwapHowNet; WordSwapHowNet()\" "
+        "to download the bank."
+    )
+    return None
+
+
+def _recover_word_case(word: str, reference_word: str) -> str:
+    """Match case of ``word`` to ``reference_word`` (TextAttack recover_word_case)."""
+    if reference_word.islower():
+        return word.lower()
+    elif reference_word.isupper() and len(reference_word) > 1:
+        return word.upper()
+    elif reference_word[0].isupper() and reference_word[1:].islower():
+        return word.capitalize()
+    return word
+
+
+def get_hownet_substitutions(
+    word: str,
+    pos_tag: Optional[str] = None,
+    max_candidates: int = -1,
+) -> list[str]:
+    """Get sememe-based synonyms from HowNet (Zang et al., 2020).
+
+    Matches TextAttack ``WordSwapHowNet._get_replacement_words()``.
+
+    Args:
+        word: target word.
+        pos_tag: universal POS tag (ADJ, NOUN, ADV, VERB) or simplified
+            (adj, noun, adv, verb). ``None`` skips HowNet lookup.
+        max_candidates: max candidates to return (-1 = all).
+
+    Returns:
+        List of candidate replacement words (case-matched).
+    """
+    bank = _load_hownet_bank()
+    if bank is None:
+        return []
+
+    pos_map = {"ADJ": "adj", "NOUN": "noun", "ADV": "adv", "VERB": "verb"}
+    mapped_pos = pos_map.get(pos_tag, pos_tag) if pos_tag else None
+    if mapped_pos not in ("adj", "noun", "adv", "verb"):
+        return []
+
+    try:
+        candidates = bank[word.lower()][mapped_pos]
+    except KeyError:
+        return []
+
+    if max_candidates > 0:
+        candidates = candidates[:max_candidates]
+
+    return [_recover_word_case(c, word) for c in candidates]
+
+
+def get_hownet_substitutions_for_text(
+    words: list[str],
+    max_candidates: int = -1,
+) -> dict[int, list[str]]:
+    """Get HowNet substitutions for every word in a sentence.
+
+    POS-tags the sentence, then looks up HowNet candidates per word.
+    Falls back to empty lists for words not in the bank or with
+    unsupported POS.
+
+    Args:
+        words: list of words (whitespace-tokenised).
+        max_candidates: max candidates per word (-1 = all).
+
+    Returns:
+        Dict mapping word index → list of candidate replacement strings.
+    """
+    from utils.text_utils import pos_tag_words
+
+    tags = pos_tag_words(words)
+
+    # Map NLTK POS tags to universal (HowNet expects ADJ/NOUN/ADV/VERB)
+    nltk_to_universal = {}
+    for t in ("JJ", "JJR", "JJS"):
+        nltk_to_universal[t] = "ADJ"
+    for t in ("NN", "NNS", "NNP", "NNPS"):
+        nltk_to_universal[t] = "NOUN"
+    for t in ("RB", "RBR", "RBS"):
+        nltk_to_universal[t] = "ADV"
+    for t in ("VB", "VBD", "VBG", "VBN", "VBP", "VBZ"):
+        nltk_to_universal[t] = "VERB"
+    # Also accept the simple tags from the heuristic POS tagger
+    for t in ("adj", "noun", "adv", "verb"):
+        nltk_to_universal[t] = t.upper()
+
+    result: dict[int, list[str]] = {}
+    for i, (word, tag) in enumerate(zip(words, tags)):
+        universal = nltk_to_universal.get(tag)
+        if universal is None:
+            continue
+        cands = get_hownet_substitutions(word, pos_tag=universal, max_candidates=max_candidates)
+        # Filter: only single-word candidates different from original
+        cands = [c for c in cands if c != word and " " not in c]
+        if cands:
+            result[i] = cands
+
+    return result
 
 
 def _get_mlm(model_name: str = DEFAULT_MLM_MODEL):
