@@ -17,3 +17,5 @@ venv/
 frontend/node_modules/
 frontend/dist/
 
+adversial-tools/
+features-md/

@@ -14,6 +14,11 @@ from .iga import run_iga
 from .pso import run_pso
 from .clare import run_clare
 from .back_translation import run_back_translation
+from .a2t import run_a2t
+from .checklist import run_checklist
+from .stresstest import run_stresstest
+from .uat import run_uat
+from .scpn import run_scpn
 
 __all__ = [
     "run_deepwordbug",
@@ -30,4 +35,9 @@ __all__ = [
     "run_pso",
     "run_clare",
     "run_back_translation",
+    "run_a2t",
+    "run_checklist",
+    "run_stresstest",
+    "run_uat",
+    "run_scpn",
 ]

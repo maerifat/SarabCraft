@@ -310,4 +310,106 @@ TEXT_ATTACK_REGISTRY = {
                             "options": ["es", "fr", "it", "pt", "ro", "ca", "gl"]},
         },
     },
+
+    # ── Word-Level (additional) ──────────────────────────────────────────
+    "A2T": {
+        "cat": "Word-Level",
+        "threat": "blackbox",
+        "paper": "Towards Improving Adversarial Training of NLP Models",
+        "authors": "Yoo & Qi",
+        "year": 2021,
+        "arxiv": "2109.00544",
+        "desc": "Gradient-ranked word importance + DistilBERT MLM for contextual substitution. "
+                "Designed for efficient adversarial training: stricter USE similarity (0.9) and "
+                "embedding distance (0.8) constraints produce higher-quality adversarial examples. "
+                "Intersection of MLM candidates and counter-fitted embedding neighbours ensures "
+                "both contextual fit and semantic proximity. Matches TextAttack A2TYoo2021 recipe.",
+        "params": {
+            "max_candidates": {"type": "int", "default": 48, "min": 5, "max": 200, "step": 5},
+            "similarity_threshold": {"type": "float", "default": 0.9, "min": 0.5, "max": 1.0, "step": 0.01},
+            "max_perturbation_ratio": {"type": "float", "default": 0.3, "min": 0.05, "max": 1.0, "step": 0.05},
+            "embedding_cos_threshold": {"type": "float", "default": 0.8, "min": 0.3, "max": 1.0, "step": 0.05},
+        },
+    },
+
+    # ── Sentence-Level (additional) ──────────────────────────────────────
+    "CheckList": {
+        "cat": "Sentence-Level",
+        "threat": "blackbox",
+        "paper": "Beyond Accuracy: Behavioral Testing of NLP Models with CheckList",
+        "authors": "Ribeiro et al.",
+        "year": 2020,
+        "arxiv": "2005.04118",
+        "desc": "Template-based linguistic perturbations that test specific model capabilities: "
+                "negation (inject/remove), contraction (expand/contract), temporal (swap references), "
+                "taxonomy (hypernym/hyponym replacement), and number perturbation. Unlike embedding-based "
+                "attacks, CheckList targets whether models rely on shallow heuristics. ACL 2020 Best Paper.",
+        "params": {
+            "perturbation_types": {"type": "select", "default": "all",
+                                   "options": ["all", "negation", "contraction", "temporal",
+                                               "taxonomy", "number"]},
+            "max_candidates": {"type": "int", "default": 50, "min": 5, "max": 200, "step": 5},
+            "similarity_threshold": {"type": "float", "default": 0.7, "min": 0.3, "max": 1.0, "step": 0.05},
+        },
+    },
+    "StressTest": {
+        "cat": "Sentence-Level",
+        "threat": "blackbox",
+        "paper": "Stress Test Evaluation for Natural Language Inference",
+        "authors": "Naik et al.",
+        "year": 2018,
+        "arxiv": "1806.00692",
+        "desc": "Concatenation-based attack appending distraction sentences: tautology "
+                "('and true is true'), negation ('and false is not true'), overlap (duplicate "
+                "input chunk), length (neutral filler padding), noise (unrelated sentences). "
+                "Tests whether models are distracted by irrelevant appended content — models "
+                "that rely on keyword matching or length bias are vulnerable. NAACL 2018.",
+        "params": {
+            "strategies": {"type": "select", "default": "all",
+                           "options": ["all", "tautology", "negation", "overlap",
+                                       "length", "noise"]},
+            "candidates_per_strategy": {"type": "int", "default": 5, "min": 1, "max": 20, "step": 1},
+            "similarity_threshold": {"type": "float", "default": 0.5, "min": 0.2, "max": 1.0, "step": 0.05},
+        },
+    },
+    "SCPN": {
+        "cat": "Sentence-Level",
+        "threat": "blackbox",
+        "paper": "Adversarial Example Generation with Syntactically Controlled Paraphrase Networks",
+        "authors": "Iyyer et al.",
+        "year": 2018,
+        "arxiv": "1804.06516",
+        "desc": "Syntactic paraphrase attack: generates paraphrases conforming to different "
+                "syntactic structures via Pegasus-paraphrase (modern drop-in for original SCPN model). "
+                "Diverse beam search + nucleus sampling produce syntactically varied candidates. "
+                "Semantic similarity filtering ensures meaning preservation. Stronger than simple "
+                "back-translation because syntax is actively diversified.",
+        "params": {
+            "num_paraphrases": {"type": "int", "default": 10, "min": 1, "max": 30, "step": 1},
+            "similarity_threshold": {"type": "float", "default": 0.7, "min": 0.3, "max": 1.0, "step": 0.05},
+            "temperature": {"type": "float", "default": 1.5, "min": 0.5, "max": 3.0, "step": 0.1},
+            "top_p": {"type": "float", "default": 0.95, "min": 0.5, "max": 1.0, "step": 0.05},
+        },
+    },
+
+    # ── Universal (Trigger-Based) ────────────────────────────────────────
+    "UAT": {
+        "cat": "Universal",
+        "threat": "whitebox",
+        "paper": "Universal Adversarial Triggers for Attacking and Analyzing NLP",
+        "authors": "Wallace et al.",
+        "year": 2019,
+        "arxiv": "1908.07125",
+        "desc": "Gradient-based discrete optimisation that finds a short token sequence (trigger) "
+                "causing misclassification when prepended or appended to input. First-order Taylor "
+                "approximation scores all vocabulary tokens at each trigger position. Per-input mode "
+                "optimises trigger for specific input; universal mode (via batch jobs) aggregates "
+                "gradients across inputs. EMNLP 2019.",
+        "params": {
+            "trigger_length": {"type": "int", "default": 3, "min": 1, "max": 10, "step": 1},
+            "num_iterations": {"type": "int", "default": 20, "min": 5, "max": 100, "step": 5},
+            "beam_size": {"type": "int", "default": 5, "min": 1, "max": 20, "step": 1},
+            "position": {"type": "select", "default": "prepend", "options": ["prepend", "append"]},
+        },
+    },
 }
