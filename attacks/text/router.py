@@ -23,6 +23,11 @@ from attacks.text.pso import run_pso
 from attacks.text.clare import run_clare
 from attacks.text.back_translation import run_back_translation
 from attacks.text.pruthi2019 import run_pruthi2019
+from attacks.text.a2t import run_a2t
+from attacks.text.checklist import run_checklist
+from attacks.text.stresstest import run_stresstest
+from attacks.text.uat import run_uat
+from attacks.text.scpn import run_scpn
 
 logger = logging.getLogger("textattack.router")
 
@@ -238,6 +243,39 @@ TEXT_ATTACK_DISPATCH = {
             _p(p, "similarity_threshold", 0.6),
             _p(p, "chained_back_translation", 0, int),
             str(p.get("target_lang", "es"))),
+
+    "A2T": lambda w, tok, txt, tgt, p:
+        run_a2t(w, tok, txt, tgt,
+            _p(p, "max_candidates", 48, int),
+            _p(p, "similarity_threshold", 0.9),
+            _p(p, "max_perturbation_ratio", 0.3),
+            _p(p, "embedding_cos_threshold", 0.8)),
+
+    "CheckList": lambda w, tok, txt, tgt, p:
+        run_checklist(w, tok, txt, tgt,
+            str(p.get("perturbation_types", "all")),
+            _p(p, "max_candidates", 50, int),
+            _p(p, "similarity_threshold", 0.7)),
+
+    "StressTest": lambda w, tok, txt, tgt, p:
+        run_stresstest(w, tok, txt, tgt,
+            str(p.get("strategies", "all")),
+            _p(p, "candidates_per_strategy", 5, int),
+            _p(p, "similarity_threshold", 0.5)),
+
+    "UAT": lambda w, tok, txt, tgt, p:
+        run_uat(w, tok, txt, tgt,
+            _p(p, "trigger_length", 3, int),
+            _p(p, "num_iterations", 20, int),
+            _p(p, "beam_size", 5, int),
+            str(p.get("position", "prepend"))),
+
+    "SCPN": lambda w, tok, txt, tgt, p:
+        run_scpn(w, tok, txt, tgt,
+            _p(p, "num_paraphrases", 10, int),
+            _p(p, "similarity_threshold", 0.7),
+            _p(p, "temperature", 1.5),
+            _p(p, "top_p", 0.95)),
 }
 
 
