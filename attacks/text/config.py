@@ -314,20 +314,26 @@ TEXT_ATTACK_REGISTRY = {
     # ── Word-Level (additional) ──────────────────────────────────────────
     "A2T": {
         "cat": "Word-Level",
-        "threat": "blackbox",
+        "threat": "whitebox",
         "paper": "Towards Improving Adversarial Training of NLP Models",
         "authors": "Yoo & Qi",
         "year": 2021,
         "arxiv": "2109.00544",
-        "desc": "Gradient-ranked word importance + DistilBERT MLM for contextual substitution. "
-                "Designed for efficient adversarial training: stricter USE similarity (0.9) and "
-                "embedding distance (0.8) constraints produce higher-quality adversarial examples. "
-                "Intersection of MLM candidates and counter-fitted embedding neighbours ensures "
-                "both contextual fit and semantic proximity. Matches TextAttack A2TYoo2021 recipe.",
+        "desc": "Exact match with TextAttack A2TYoo2021 recipe. "
+                "GreedyWordSwapWIR(wir_method='gradient'): gradient-based word importance. "
+                "Default: WordSwapEmbedding(max_candidates=20) + WordEmbeddingDistance(min_cos_sim=0.8). "
+                "MLM variant: WordSwapMaskedLM(method='bae', max_candidates=20, bert-base-uncased). "
+                "Constraints: RepeatModification, StopwordModification, "
+                "PartOfSpeech(allow_verb_noun_swap=False), "
+                "MaxModificationRate(max_rate=0.1, min_threshold=4), "
+                "SBERT('stsb-distilbert-base', threshold=0.9, metric='cosine'). "
+                "On success: returns candidate with highest similarity score.",
         "params": {
-            "max_candidates": {"type": "int", "default": 48, "min": 5, "max": 200, "step": 5},
+            "mlm": {"type": "bool", "default": False,
+                    "desc": "Use A2T-MLM variant (WordSwapMaskedLM) instead of embedding-based"},
+            "max_candidates": {"type": "int", "default": 20, "min": 5, "max": 200, "step": 5},
             "similarity_threshold": {"type": "float", "default": 0.9, "min": 0.5, "max": 1.0, "step": 0.01},
-            "max_perturbation_ratio": {"type": "float", "default": 0.3, "min": 0.05, "max": 1.0, "step": 0.05},
+            "max_modification_rate": {"type": "float", "default": 0.1, "min": 0.05, "max": 1.0, "step": 0.05},
             "embedding_cos_threshold": {"type": "float", "default": 0.8, "min": 0.3, "max": 1.0, "step": 0.05},
         },
     },
@@ -340,15 +346,19 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Ribeiro et al.",
         "year": 2020,
         "arxiv": "2005.04118",
-        "desc": "Template-based linguistic perturbations that test specific model capabilities: "
-                "negation (inject/remove), contraction (expand/contract), temporal (swap references), "
-                "taxonomy (hypernym/hyponym replacement), and number perturbation. Unlike embedding-based "
-                "attacks, CheckList targets whether models rely on shallow heuristics. ACL 2020 Best Paper.",
+        "desc": "Behavioural testing framework (ACL 2020 Best Paper). Builds MFT (unit tests with expected "
+                "labels), INV (invariance — prediction must not change under meaning-preserving edits), and "
+                "DIR (directional — prediction must change predictably) tests from perturbation generators: "
+                "negation, contraction, temporal swap, taxonomy swap, number, typo, punctuation, and NER "
+                "entity replacement. Reports per-capability failure rates via a TestSuite.",
         "params": {
+            "test_types": {"type": "select", "default": "all",
+                           "options": ["all", "mft", "inv", "dir"]},
             "perturbation_types": {"type": "select", "default": "all",
                                    "options": ["all", "negation", "contraction", "temporal",
-                                               "taxonomy", "number"]},
-            "max_candidates": {"type": "int", "default": 50, "min": 5, "max": 200, "step": 5},
+                                               "taxonomy", "number", "typo", "punctuation",
+                                               "entity_name", "entity_location"]},
+            "max_test_cases": {"type": "int", "default": 50, "min": 5, "max": 200, "step": 5},
             "similarity_threshold": {"type": "float", "default": 0.7, "min": 0.3, "max": 1.0, "step": 0.05},
         },
     },
@@ -410,6 +420,85 @@ TEXT_ATTACK_REGISTRY = {
             "num_iterations": {"type": "int", "default": 20, "min": 5, "max": 100, "step": 5},
             "beam_size": {"type": "int", "default": 5, "min": 1, "max": 20, "step": 1},
             "position": {"type": "select", "default": "prepend", "options": ["prepend", "append"]},
+        },
+    },
+
+    # ── Deletion-Based ───────────────────────────────────────────────────
+    "Input Reduction": {
+        "cat": "Deletion",
+        "threat": "blackbox",
+        "paper": "Pathologies of Neural Models Make Interpretations Difficult",
+        "authors": "Feng et al.",
+        "year": 2018,
+        "arxiv": "1804.07781",
+        "desc": "The only deletion-based attack: iteratively removes the least important word "
+                "until prediction changes or minimal sufficient input is reached. Exposes models "
+                "that maintain predictions even after most content is removed, revealing "
+                "pathological over-confidence and reliance on spurious features. EMNLP 2018.",
+        "params": {
+            "max_reduction_ratio": {"type": "float", "default": 0.7, "min": 0.1, "max": 0.95, "step": 0.05},
+            "stop_at_length": {"type": "int", "default": 1, "min": 1, "max": 10, "step": 1},
+        },
+    },
+
+    # ── Word-Level (perplexity-constrained) ──────────────────────────────
+    "Kuleshov2017": {
+        "cat": "Word-Level",
+        "threat": "blackbox",
+        "paper": "Adversarial Examples for Natural Language Classification Problems",
+        "authors": "Kuleshov et al.",
+        "year": 2018,
+        "arxiv": "1707.05461",
+        "desc": "Greedy word substitution constrained by GPT-2 language model perplexity "
+                "instead of sentence-embedding similarity (USE). Candidates from counter-fitted "
+                "embeddings are accepted only if they don't increase perplexity beyond a ratio "
+                "threshold. Produces more grammatically natural adversarial examples than "
+                "USE-constrained attacks. TextAttack Kuleshov2017 recipe.",
+        "params": {
+            "max_candidates": {"type": "int", "default": 50, "min": 5, "max": 200, "step": 5},
+            "max_perplexity_ratio": {"type": "float", "default": 4.0, "min": 1.5, "max": 10.0, "step": 0.5},
+            "max_perturbation_ratio": {"type": "float", "default": 0.3, "min": 0.05, "max": 1.0, "step": 0.05},
+            "embedding_cos_threshold": {"type": "float", "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05},
+        },
+    },
+
+    # ── Embedding-Space (Projected Gradient) ─────────────────────────────
+    "Seq2Sick": {
+        "cat": "Embedding-Space",
+        "threat": "whitebox",
+        "paper": "Seq2Sick: Evaluating the Robustness of Sequence-to-Sequence Models with Adversarial Examples",
+        "authors": "Cheng et al.",
+        "year": 2020,
+        "arxiv": "1803.01128",
+        "desc": "Projected gradient attack operating in continuous EMBEDDING SPACE — the only "
+                "attack that applies PGD directly to token embeddings then projects back to "
+                "nearest discrete tokens. Enables gradient-based optimization impossible with "
+                "purely discrete methods. Adapted from seq2seq formulation for classification. "
+                "ICLR 2020.",
+        "params": {
+            "num_iterations": {"type": "int", "default": 30, "min": 5, "max": 100, "step": 5},
+            "step_size": {"type": "float", "default": 0.01, "min": 0.001, "max": 0.1, "step": 0.005},
+            "max_perturbation_ratio": {"type": "float", "default": 0.3, "min": 0.05, "max": 1.0, "step": 0.05},
+            "similarity_threshold": {"type": "float", "default": 0.7, "min": 0.3, "max": 1.0, "step": 0.05},
+        },
+    },
+
+    # ── Morphological ────────────────────────────────────────────────────
+    "MorpheuS": {
+        "cat": "Morphological",
+        "threat": "blackbox",
+        "paper": "It's Morphin' Time! Combating Linguistic Discrimination with Inflectional Perturbations",
+        "authors": "Tan et al.",
+        "year": 2020,
+        "arxiv": "2009.11112",
+        "desc": "Inflectional morphology attack: changes grammatical inflection (verb tense, "
+                "noun number, adjective degree) rather than substituting synonyms or introducing "
+                "typos. Linguistically principled: 'walked'→'walks', 'cats'→'cat', 'better'→'best'. "
+                "Uses NLTK lemmatization + rule-based inflection generation. Tests whether models "
+                "are sensitive to valid grammatical form variations.",
+        "params": {
+            "max_perturbation_ratio": {"type": "float", "default": 0.3, "min": 0.05, "max": 1.0, "step": 0.05},
+            "similarity_threshold": {"type": "float", "default": 0.8, "min": 0.5, "max": 1.0, "step": 0.05},
         },
     },
 }

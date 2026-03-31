@@ -28,6 +28,10 @@ from attacks.text.checklist import run_checklist
 from attacks.text.stresstest import run_stresstest
 from attacks.text.uat import run_uat
 from attacks.text.scpn import run_scpn
+from attacks.text.input_reduction import run_input_reduction
+from attacks.text.kuleshov2017 import run_kuleshov2017
+from attacks.text.seq2sick import run_seq2sick
+from attacks.text.morpheus import run_morpheus
 
 logger = logging.getLogger("textattack.router")
 
@@ -246,15 +250,18 @@ TEXT_ATTACK_DISPATCH = {
 
     "A2T": lambda w, tok, txt, tgt, p:
         run_a2t(w, tok, txt, tgt,
-            _p(p, "max_candidates", 48, int),
+            bool(p.get("mlm", False)),
+            _p(p, "max_candidates", 20, int),
             _p(p, "similarity_threshold", 0.9),
-            _p(p, "max_perturbation_ratio", 0.3),
+            _p(p, "max_modification_rate", 0.1),
+            _p(p, "min_threshold", 4, int),
             _p(p, "embedding_cos_threshold", 0.8)),
 
     "CheckList": lambda w, tok, txt, tgt, p:
         run_checklist(w, tok, txt, tgt,
+            str(p.get("test_types", "all")),
             str(p.get("perturbation_types", "all")),
-            _p(p, "max_candidates", 50, int),
+            _p(p, "max_test_cases", 50, int),
             _p(p, "similarity_threshold", 0.7)),
 
     "StressTest": lambda w, tok, txt, tgt, p:
@@ -276,6 +283,30 @@ TEXT_ATTACK_DISPATCH = {
             _p(p, "similarity_threshold", 0.7),
             _p(p, "temperature", 1.5),
             _p(p, "top_p", 0.95)),
+
+    "Input Reduction": lambda w, tok, txt, tgt, p:
+        run_input_reduction(w, tok, txt, tgt,
+            _p(p, "max_reduction_ratio", 0.7),
+            _p(p, "stop_at_length", 1, int)),
+
+    "Kuleshov2017": lambda w, tok, txt, tgt, p:
+        run_kuleshov2017(w, tok, txt, tgt,
+            _p(p, "max_candidates", 50, int),
+            _p(p, "max_perplexity_ratio", 4.0),
+            _p(p, "max_perturbation_ratio", 0.3),
+            _p(p, "embedding_cos_threshold", 0.5)),
+
+    "Seq2Sick": lambda w, tok, txt, tgt, p:
+        run_seq2sick(w, tok, txt, tgt,
+            _p(p, "num_iterations", 30, int),
+            _p(p, "step_size", 0.01),
+            _p(p, "max_perturbation_ratio", 0.3),
+            _p(p, "similarity_threshold", 0.7)),
+
+    "MorpheuS": lambda w, tok, txt, tgt, p:
+        run_morpheus(w, tok, txt, tgt,
+            _p(p, "max_perturbation_ratio", 0.3),
+            _p(p, "similarity_threshold", 0.8)),
 }
 
 

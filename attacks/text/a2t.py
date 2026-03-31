@@ -2,115 +2,138 @@
 A2T — Yoo & Qi, 2021 (arXiv:2109.00544)
 
 Towards Improving Adversarial Training of NLP Models.
-Word-level black-box attack designed for efficient adversarial training:
-  - Gradient-ranked word importance (GreedyWordSwapWIR)
-  - DistilBERT MLM for contextual substitution (WordSwapMaskedLM)
-  - USE cosine similarity constraint (threshold=0.9)
-  - Per-word embedding distance filter (min_cos_sim=0.8)
-  - POS tag preservation (allow_verb_noun_swap=True)
 
-Key difference from BERT-Attack/BAE: A2T masks each word position
-individually (standard BAE-style) but uses DistilBERT for faster
-inference, and enforces stricter similarity constraints to produce
-higher-quality adversarial examples suitable for adversarial training.
+Exact match with TextAttack A2TYoo2021 recipe:
+  - Search: GreedyWordSwapWIR(wir_method="gradient")
+  - Default variant: WordSwapEmbedding(max_candidates=20)
+    + WordEmbeddingDistance(min_cos_sim=0.8)
+  - MLM variant (mlm=True): WordSwapMaskedLM(method="bae",
+    max_candidates=20, min_confidence=0.0, model="bert-base-uncased")
+  - SBERT("stsb-distilbert-base", threshold=0.9, metric="cosine",
+    window_size=15, compare_against_original=True)
+  - PartOfSpeech(allow_verb_noun_swap=False)
+  - MaxModificationRate(max_rate=0.1, min_threshold=4)
+  - RepeatModification, StopwordModification
+  - UntargetedClassification goal (targeted accepted as extension)
+  - On success: returns candidate with highest similarity score
 
-Reference: TextAttack A2TYoo2021 recipe.
+Reference: TextAttack A2TYoo2021 recipe
+  https://github.com/QData/TextAttack/blob/master/textattack/attack_recipes/a2t_yoo_2021.py
 """
 
 import logging
-import math
 
 from models.text_loader import get_label_index
 
 logger = logging.getLogger("textattack.attacks.a2t")
 
-_A2T_MLM_MODEL = "distilbert-base-uncased"
-_a2t_mlm = None
-_a2t_tok = None
+_A2T_SBERT_MODEL = "stsb-distilbert-base"
+_a2t_sbert = None
+_a2t_sbert_loaded = False
 
-_VERB_TAGS = {"VB", "VBD", "VBG", "VBN", "VBP", "VBZ", "verb"}
-_NOUN_TAGS = {"NN", "NNS", "NNP", "NNPS", "noun"}
+_SBERT_WINDOW_SIZE = 15
+
+_UNIVERSAL_POS_MAP = {
+    "VB": "VERB", "VBD": "VERB", "VBG": "VERB", "VBN": "VERB",
+    "VBP": "VERB", "VBZ": "VERB",
+    "NN": "NOUN", "NNS": "NOUN", "NNP": "NOUN", "NNPS": "NOUN",
+    "JJ": "ADJ", "JJR": "ADJ", "JJS": "ADJ",
+    "RB": "ADV", "RBR": "ADV", "RBS": "ADV", "WRB": "ADV",
+    "DT": "DET", "PDT": "DET", "WDT": "DET",
+    "IN": "ADP",
+    "CC": "CCONJ",
+    "PRP": "PRON", "PRP$": "PRON", "WP": "PRON", "WP$": "PRON",
+    "EX": "PRON",
+    "TO": "PART", "RP": "PART",
+    "CD": "NUM",
+    "MD": "AUX",
+    "UH": "INTJ",
+    "FW": "X", "SYM": "SYM",
+    "verb": "VERB", "noun": "NOUN", "adj": "ADJ", "adv": "ADV",
+    "other": "X",
+}
 
 
-def _get_a2t_mlm():
-    """Lazy-load DistilBERT MLM for A2T candidate generation."""
-    global _a2t_mlm, _a2t_tok
-    if _a2t_mlm is not None:
-        return _a2t_mlm, _a2t_tok
+def _get_a2t_sbert():
+    """Lazy-load SBERT for A2T similarity constraint."""
+    global _a2t_sbert, _a2t_sbert_loaded
+    if _a2t_sbert_loaded:
+        return _a2t_sbert
 
-    import torch
-    from transformers import AutoModelForMaskedLM, AutoTokenizer
-
-    logger.info("Loading A2T MLM: %s", _A2T_MLM_MODEL)
-    _a2t_tok = AutoTokenizer.from_pretrained(_A2T_MLM_MODEL, use_fast=True)
-    _a2t_mlm = AutoModelForMaskedLM.from_pretrained(_A2T_MLM_MODEL)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    _a2t_mlm.to(device)
-    _a2t_mlm.eval()
-    return _a2t_mlm, _a2t_tok
-
-
-def _mlm_word_candidates(words: list[str], index: int, max_candidates: int = 48) -> list[str]:
-    """Mask word at index, predict top-k replacements via DistilBERT MLM."""
-    import torch
-
-    model, tokenizer = _get_a2t_mlm()
-    device = next(model.parameters()).device
-
-    masked = list(words)
-    masked[index] = tokenizer.mask_token
-    masked_text = " ".join(masked)
-
-    encoding = tokenizer(
-        masked_text, max_length=512, truncation=True,
-        padding="max_length", return_tensors="pt",
-    )
-    inputs = {k: v.to(device) for k, v in encoding.items()}
-
-    with torch.no_grad():
-        preds = model(**inputs)[0]
-
-    ids = inputs["input_ids"][0].tolist()
+    _a2t_sbert_loaded = True
     try:
-        masked_idx = ids.index(tokenizer.mask_token_id)
-    except ValueError:
-        return []
-
-    logits = preds[0, masked_idx]
-    probs = torch.softmax(logits, dim=0)
-    ranked = torch.argsort(probs, descending=True)
-
-    candidates = []
-    for _id in ranked[:max_candidates * 3]:
-        _id = _id.item()
-        token = tokenizer.convert_ids_to_tokens(_id)
-        word = token.lstrip("##").strip()
-        if (
-            word
-            and word.isalpha()
-            and word.lower() != words[index].lower()
-            and not token.startswith("##")
-        ):
-            candidates.append(word)
-        if len(candidates) >= max_candidates:
-            break
-
-    return candidates
+        from sentence_transformers import SentenceTransformer
+        logger.info("Loading A2T SBERT: %s", _A2T_SBERT_MODEL)
+        _a2t_sbert = SentenceTransformer(_A2T_SBERT_MODEL)
+    except ImportError:
+        logger.warning(
+            "sentence-transformers not installed; "
+            "A2T SBERT similarity constraint will fail closed"
+        )
+    return _a2t_sbert
 
 
-def _angular_sim(cos_sim: float) -> float:
-    cos_sim = max(-1.0, min(1.0, cos_sim))
-    return 1.0 - math.acos(cos_sim) / math.pi
+def _sbert_cosine_sim(text_a: str, text_b: str) -> float:
+    """Cosine similarity via stsb-distilbert-base (raw cosine, no angular)."""
+    model = _get_a2t_sbert()
+    if model is None:
+        return 0.0
+
+    embeddings = model.encode([text_a, text_b], convert_to_tensor=True)
+    from torch.nn.functional import cosine_similarity
+    return cosine_similarity(
+        embeddings[0].unsqueeze(0), embeddings[1].unsqueeze(0)
+    ).item()
 
 
-def _pos_compatible(orig_tag: str, cand_tag: str) -> bool:
-    if orig_tag == cand_tag:
-        return True
-    orig_v = orig_tag in _VERB_TAGS
-    orig_n = orig_tag in _NOUN_TAGS
-    cand_v = cand_tag in _VERB_TAGS
-    cand_n = cand_tag in _NOUN_TAGS
-    return (orig_v and cand_n) or (orig_n and cand_v)
+def _windowed_text(words: list[str], index: int, window_size: int) -> str:
+    """Extract text window centred on index.
+
+    Matches TextAttack AttackedText.text_window_around_index().
+    """
+    half = (window_size - 1) // 2
+    if index - half < 0:
+        start = 0
+        end = min(window_size, len(words))
+    elif index + half >= len(words):
+        start = max(0, len(words) - window_size)
+        end = len(words)
+    else:
+        start = index - half
+        end = index + half + 1
+    return " ".join(words[start:end])
+
+
+def _a2t_sbert_check(
+    original_text: str,
+    candidate_text: str,
+    word_idx: int,
+    threshold: float,
+) -> tuple[bool, float]:
+    """Windowed SBERT cosine similarity check.
+
+    Matches TextAttack SBERT(model_name="stsb-distilbert-base",
+    threshold=0.9, metric="cosine", window_size=15,
+    skip_text_shorter_than_window=False, compare_against_original=True).
+    """
+    from utils.text_utils import get_words_and_spans
+
+    orig_words = [w for w, _, _ in get_words_and_spans(original_text)]
+    cand_words = [w for w, _, _ in get_words_and_spans(candidate_text)]
+
+    orig_window = _windowed_text(orig_words, word_idx, _SBERT_WINDOW_SIZE)
+    cand_window = _windowed_text(cand_words, word_idx, _SBERT_WINDOW_SIZE)
+
+    if not orig_window.strip() or not cand_window.strip():
+        return False, 0.0
+
+    sim = _sbert_cosine_sim(orig_window, cand_window)
+    return sim >= threshold, sim
+
+
+def _to_universal_pos(tag: str) -> str:
+    """Map Penn Treebank / heuristic POS to universal tagset."""
+    return _UNIVERSAL_POS_MAP.get(tag, tag)
 
 
 def run_a2t(
@@ -118,30 +141,38 @@ def run_a2t(
     tokenizer,
     text: str,
     target_label: str = None,
-    max_candidates: int = 48,
+    mlm: bool = False,
+    max_candidates: int = 20,
     similarity_threshold: float = 0.9,
-    max_perturbation_ratio: float = 0.3,
+    max_modification_rate: float = 0.1,
+    min_threshold: int = 4,
     embedding_cos_threshold: float = 0.8,
 ) -> str:
     """A2T attack (Yoo & Qi, 2021).
 
-    Gradient-ranked word importance + DistilBERT MLM substitution with
-    strict USE and embedding constraints. Designed for generating
-    high-quality adversarial examples suitable for adversarial training.
+    Exact match with TextAttack A2TYoo2021 recipe:
+      - Search: GreedyWordSwapWIR(wir_method="gradient")
+      - Transformation: WordSwapEmbedding (default) or WordSwapMaskedLM (mlm=True)
+      - Constraints: RepeatModification, StopwordModification,
+        PartOfSpeech(allow_verb_noun_swap=False),
+        MaxModificationRate(max_rate=0.1, min_threshold=4),
+        SBERT("stsb-distilbert-base", threshold=0.9, metric="cosine"),
+        WordEmbeddingDistance(min_cos_sim=0.8) [default variant only]
 
     Returns: adversarial text (str).
     """
-    from utils.text_word_importance import delete_one_importance
+    from utils.text_word_importance import gradient_importance
     from utils.text_utils import (
         get_words_and_spans, replace_word_at, pos_tag_words, clean_word,
+        is_stopword,
     )
-    from utils.text_word_substitution import get_embedding_neighbours_with_scores
-    from utils.text_constraints import compute_semantic_similarity
+    from utils.text_word_substitution import (
+        get_embedding_neighbours_with_scores, get_mlm_substitutions,
+    )
 
     logger.info(
-        "A2T: starting (cands=%d, sim=%.4f, emb_cos=%.2f, max_pert=%.2f)",
-        max_candidates, similarity_threshold, embedding_cos_threshold,
-        max_perturbation_ratio,
+        "A2T: starting (mlm=%s, cands=%d, sim=%.2f, max_mod=%.2f)",
+        mlm, max_candidates, similarity_threshold, max_modification_rate,
     )
 
     words_spans = get_words_and_spans(text)
@@ -149,95 +180,158 @@ def run_a2t(
         return text
 
     words = [w for w, _, _ in words_spans]
-    max_perturbs = max(1, int(len(words) * max_perturbation_ratio))
+    num_words = len(words)
 
-    orig_label, orig_conf, _ = model_wrapper.predict(text)
-    importance = delete_one_importance(model_wrapper, text, orig_label)
+    # MaxModificationRate(max_rate, min_threshold):
+    # rate enforced only when num_words >= min_threshold
+    if num_words >= min_threshold:
+        max_perturbs = max(1, int(num_words * max_modification_rate))
+    else:
+        max_perturbs = num_words
 
+    orig_label, orig_conf, orig_label_idx = model_wrapper.predict(text)
+    orig_probs = model_wrapper.predict_probs(text)
+
+    # GreedyWordSwapWIR(wir_method="gradient"): gradient-based word importance
+    importance = gradient_importance(
+        model_wrapper.model, model_wrapper.tokenizer, text,
+    )
+
+    orig_pos_tags = pos_tag_words(words)
+
+    original_text = text
     current_text = text
     perturbations_made = 0
     modified_indices: set[int] = set()
 
-    for word_idx, score in importance:
+    # UntargetedClassification score: 1 - P(original_class)
+    cur_score = 1.0 - orig_probs[orig_label_idx]
+
+    for word_idx, _imp_score in importance:
         if perturbations_made >= max_perturbs:
             break
 
+        # RepeatModification
         if word_idx in modified_indices:
             continue
 
+        if word_idx >= num_words:
+            continue
+
         word = words[word_idx]
+
+        # StopwordModification
+        if is_stopword(word):
+            continue
+
         if len(clean_word(word)) <= 1:
             continue
 
         current_words = [w for w, _, _ in get_words_and_spans(current_text)]
+        if word_idx >= len(current_words):
+            continue
 
-        # DistilBERT MLM candidates (primary substitution source)
-        mlm_cands = _mlm_word_candidates(current_words, word_idx, max_candidates)
+        # --- Candidate generation ---
+        if mlm:
+            # A2T-MLM: WordSwapMaskedLM(method="bae", max_candidates=20)
+            candidates = get_mlm_substitutions(
+                current_text, position=word_idx, top_k=max_candidates,
+            )
+        else:
+            # Default: WordSwapEmbedding(max_candidates=20)
+            # + WordEmbeddingDistance(min_cos_sim=0.8)
+            emb_results = get_embedding_neighbours_with_scores(
+                current_words[word_idx], top_k=max_candidates,
+                context_text=current_text, position=word_idx,
+            )
+            candidates = [
+                c for c, s in emb_results if s >= embedding_cos_threshold
+            ]
 
-        # Also collect embedding neighbours and filter by cosine distance
-        emb_cands_scored = get_embedding_neighbours_with_scores(
-            word, top_k=max_candidates, context_text=current_text,
-            position=word_idx,
-        )
-        emb_cands = {c for c, s in emb_cands_scored if s >= embedding_cos_threshold}
-
-        # Intersection: candidates must appear in MLM output AND pass
-        # embedding distance (A2T paper uses both as constraint)
-        candidates = [c for c in mlm_cands if c.lower() in {e.lower() for e in emb_cands}]
         if not candidates:
-            # Fallback: use MLM-only candidates if intersection empty
-            candidates = mlm_cands[:max_candidates // 2]
+            continue
 
-        # POS tag filter
-        if word_idx < len(current_words):
-            current_pos = pos_tag_words(current_words)
-            if word_idx < len(current_pos):
-                word_pos = current_pos[word_idx]
-                filtered = []
-                for cand in candidates:
-                    cand_pos = pos_tag_words([cand])
-                    if cand_pos and _pos_compatible(word_pos, cand_pos[0]):
-                        filtered.append(cand)
+        # PartOfSpeech(allow_verb_noun_swap=False): universal tagset, exact match
+        if word_idx < len(orig_pos_tags):
+            word_upos = _to_universal_pos(orig_pos_tags[word_idx])
+            filtered = []
+            for cand in candidates:
+                cand_tags = pos_tag_words([cand])
+                if cand_tags and _to_universal_pos(cand_tags[0]) == word_upos:
+                    filtered.append(cand)
+            if filtered:
                 candidates = filtered
 
-        best_text = None
-        best_impact = -1.0
+        # --- Score all candidates ---
+        # (text, goal_score, succeeded, sbert_sim)
+        scored: list[tuple[str, float, bool, float]] = []
 
         for cand in candidates:
             candidate_text = replace_word_at(current_text, word_idx, cand)
 
-            # USE similarity: stricter threshold (0.9 vs TextFooler's 0.84)
-            sim = compute_semantic_similarity(current_text, candidate_text)
-            ang_sim = _angular_sim(sim)
-            if ang_sim < similarity_threshold:
+            # SBERT cosine: compare_against_original=True, window_size=15
+            passes, sim = _a2t_sbert_check(
+                original_text, candidate_text, word_idx, similarity_threshold,
+            )
+            if not passes:
                 continue
 
-            label, conf, _ = model_wrapper.predict(candidate_text)
+            probs = model_wrapper.predict_probs(candidate_text)
+            pred_idx = probs.index(max(probs))
 
             if target_label is not None:
-                if label.lower() == target_label.lower():
-                    logger.info("A2T: success at perturbation %d", perturbations_made + 1)
-                    return candidate_text
-                probs = model_wrapper.predict_probs(candidate_text)
-                target_idx = get_label_index(model_wrapper.model, target_label)
-                if target_idx is not None and target_idx < len(probs):
-                    impact = probs[target_idx]
+                t_idx = get_label_index(model_wrapper.model, target_label)
+                succeeded = t_idx is not None and pred_idx == t_idx
+                if succeeded:
+                    cand_score = 2.0 - probs[orig_label_idx] + probs[t_idx]
                 else:
-                    impact = orig_conf - conf
+                    cand_score = (
+                        probs[t_idx]
+                        if t_idx is not None and t_idx < len(probs)
+                        else 1.0 - probs[orig_label_idx]
+                    )
             else:
-                if label != orig_label:
-                    logger.info("A2T: success at perturbation %d", perturbations_made + 1)
-                    return candidate_text
-                impact = orig_conf - conf
+                # UntargetedClassification scoring
+                succeeded = pred_idx != orig_label_idx
+                if succeeded:
+                    cand_score = 2.0 - probs[orig_label_idx] + max(probs)
+                else:
+                    cand_score = 1.0 - probs[orig_label_idx]
 
-            if impact > best_impact:
-                best_impact = impact
-                best_text = candidate_text
+            scored.append((candidate_text, cand_score, succeeded, sim))
 
-        if best_text is not None:
-            current_text = best_text
-            perturbations_made += 1
-            modified_indices.add(word_idx)
+        if not scored:
+            continue
 
-    logger.info("A2T: finished (%d perturbations)", perturbations_made)
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        best_text, best_score, best_succeeded, _ = scored[0]
+
+        # Greedy: only accept if score improved
+        if best_score <= cur_score:
+            continue
+
+        cur_score = best_score
+        current_text = best_text
+        perturbations_made += 1
+        modified_indices.add(word_idx)
+
+        # On success: return candidate with highest similarity among
+        # all successful candidates (matching GreedyWordSwapWIR behavior)
+        if best_succeeded:
+            max_sim = -float("inf")
+            return_text = best_text
+            for cand_text, _, succeeded, sim in scored:
+                if not succeeded:
+                    break
+                if sim > max_sim:
+                    max_sim = sim
+                    return_text = cand_text
+            logger.info(
+                "A2T: success at perturbation %d (sim=%.4f)",
+                perturbations_made, max_sim,
+            )
+            return return_text
+
+    logger.info("A2T: finished (%d perturbations, no success)", perturbations_made)
     return current_text

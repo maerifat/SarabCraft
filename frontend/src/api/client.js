@@ -83,9 +83,13 @@ function attachAbortCancellation(signal, getJobId, { cancelOnAbort = true } = {}
 }
 
 async function waitForJob(jobId, { signal } = {}) {
+  let afterEventId = 0
   while (true) {
     if (signal?.aborted) throw abortError()
-    const job = await getJob(jobId, { signal })
+    const job = await getJob(jobId, { afterEventId, signal })
+    for (const event of job.events || []) {
+      afterEventId = Math.max(afterEventId, event.id)
+    }
     if (job.status === 'completed') return job
     if (job.status === 'failed') throw new Error(job.error_message || 'Job failed')
     if (job.status === 'cancelled') throw new Error('Job cancelled')
