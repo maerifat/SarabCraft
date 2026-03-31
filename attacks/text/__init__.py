@@ -19,6 +19,10 @@ from .checklist import run_checklist
 from .stresstest import run_stresstest
 from .uat import run_uat
 from .scpn import run_scpn
+from .input_reduction import run_input_reduction
+from .kuleshov2017 import run_kuleshov2017
+from .seq2sick import run_seq2sick
+from .morpheus import run_morpheus
 
 __all__ = [
     "run_deepwordbug",
@@ -40,4 +44,8 @@ __all__ = [
     "run_stresstest",
     "run_uat",
     "run_scpn",
+    "run_input_reduction",
+    "run_kuleshov2017",
+    "run_seq2sick",
+    "run_morpheus",
 ]
