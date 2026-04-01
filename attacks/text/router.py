@@ -279,10 +279,9 @@ TEXT_ATTACK_DISPATCH = {
 
     "SCPN": lambda w, tok, txt, tgt, p:
         run_scpn(w, tok, txt, tgt,
-            _p(p, "num_paraphrases", 10, int),
+            _p(p, "num_templates", 10, int),
             _p(p, "similarity_threshold", 0.7),
-            _p(p, "temperature", 1.5),
-            _p(p, "top_p", 0.95)),
+            _p(p, "beam_size", 3, int)),
 
     "Input Reduction": lambda w, tok, txt, tgt, p:
         run_input_reduction(w, tok, txt, tgt,
@@ -291,22 +290,25 @@ TEXT_ATTACK_DISPATCH = {
 
     "Kuleshov2017": lambda w, tok, txt, tgt, p:
         run_kuleshov2017(w, tok, txt, tgt,
-            _p(p, "max_candidates", 50, int),
-            _p(p, "max_perplexity_ratio", 4.0),
-            _p(p, "max_perturbation_ratio", 0.3),
-            _p(p, "embedding_cos_threshold", 0.5)),
+            _p(p, "max_candidates", 15, int),
+            _p(p, "max_log_prob_diff", 2.0),
+            _p(p, "max_perturbation_ratio", 0.5),
+            _p(p, "thought_vector_threshold", 0.2),
+            _p(p, "target_max_score", 0.7)),
 
     "Seq2Sick": lambda w, tok, txt, tgt, p:
         run_seq2sick(w, tok, txt, tgt,
-            _p(p, "num_iterations", 30, int),
-            _p(p, "step_size", 0.01),
-            _p(p, "max_perturbation_ratio", 0.3),
-            _p(p, "similarity_threshold", 0.7)),
+            str(p.get("attack_mode", "non_overlapping")),
+            str(p.get("target_keywords") or ""),
+            _p(p, "num_iterations", 200, int),
+            _p(p, "const", 1.0),
+            _p(p, "confidence_margin", 0.0),
+            bool(p.get("group_lasso", True)),
+            bool(p.get("grad_reg", True))),
 
     "MorpheuS": lambda w, tok, txt, tgt, p:
         run_morpheus(w, tok, txt, tgt,
-            _p(p, "max_perturbation_ratio", 0.3),
-            _p(p, "similarity_threshold", 0.8)),
+            bool(p.get("constrain_pos", True))),
 }
 
 

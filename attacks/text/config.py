@@ -369,15 +369,23 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Naik et al.",
         "year": 2018,
         "arxiv": "1806.00692",
-        "desc": "Concatenation-based attack appending distraction sentences: tautology "
-                "('and true is true'), negation ('and false is not true'), overlap (duplicate "
-                "input chunk), length (neutral filler padding), noise (unrelated sentences). "
-                "Tests whether models are distracted by irrelevant appended content — models "
-                "that rely on keyword matching or length bias are vulnerable. NAACL 2018.",
+        "desc": "Exact match to the six stress tests from Naik et al. (COLING 2018) and "
+                "official AbhilashaRavichander/NLI_StressTest implementation. "
+                "Competence: antonymy (Lesk WSD without POS constraint, adjective-satellite "
+                "and noun senses only, official blacklist of 25 ambiguous words, multi-word "
+                "and 'civilian' antonym filtering), numerical (first-digit change with "
+                "comparison-based 'more/less than' prefixing per quant_example_gen.py). "
+                "Distraction: word_overlap ('and true is true'), negation "
+                "('and false is not true'), length_mismatch ('and true is true' ×5) — "
+                "all exempt from similarity checking (propositional logic guarantee). "
+                "Noise: spelling_error (perturb_word_swap with position-0 inclusion and "
+                "2-char reversal, perturb_word_kb with official keyboard_char_dict, "
+                "word selection len>1, case-preserving replacement matching official "
+                "inline title-case logic).",
         "params": {
             "strategies": {"type": "select", "default": "all",
-                           "options": ["all", "tautology", "negation", "overlap",
-                                       "length", "noise"]},
+                           "options": ["all", "antonymy", "numerical", "word_overlap",
+                                       "negation", "length_mismatch", "spelling_error"]},
             "candidates_per_strategy": {"type": "int", "default": 5, "min": 1, "max": 20, "step": 1},
             "similarity_threshold": {"type": "float", "default": 0.5, "min": 0.2, "max": 1.0, "step": 0.05},
         },
@@ -388,17 +396,18 @@ TEXT_ATTACK_REGISTRY = {
         "paper": "Adversarial Example Generation with Syntactically Controlled Paraphrase Networks",
         "authors": "Iyyer et al.",
         "year": 2018,
-        "arxiv": "1804.06516",
-        "desc": "Syntactic paraphrase attack: generates paraphrases conforming to different "
-                "syntactic structures via Pegasus-paraphrase (modern drop-in for original SCPN model). "
-                "Diverse beam search + nucleus sampling produce syntactically varied candidates. "
-                "Semantic similarity filtering ensures meaning preservation. Stronger than simple "
-                "back-translation because syntax is actively diversified.",
+        "arxiv": "1804.06059",
+        "desc": "Exact implementation of the original SCPN encoder-decoder model "
+                "(github.com/miyyer/scpn): bidirectional LSTM encoder, 2-layer LSTM decoder "
+                "with bilinear attention over encoder and parse hidden states, copy mechanism. "
+                "Two-stage pipeline: ParseNet generates full constituency parses from top-2-level "
+                "templates, then SCPN generates paraphrases conditioned on the full parse. "
+                "Pretrained weights from the original authors. Filters by n-gram overlap (≥0.5) "
+                "and semantic similarity.",
         "params": {
-            "num_paraphrases": {"type": "int", "default": 10, "min": 1, "max": 30, "step": 1},
+            "num_templates": {"type": "int", "default": 10, "min": 1, "max": 10, "step": 1},
             "similarity_threshold": {"type": "float", "default": 0.7, "min": 0.3, "max": 1.0, "step": 0.05},
-            "temperature": {"type": "float", "default": 1.5, "min": 0.5, "max": 3.0, "step": 0.1},
-            "top_p": {"type": "float", "default": 0.95, "min": 0.5, "max": 1.0, "step": 0.05},
+            "beam_size": {"type": "int", "default": 3, "min": 1, "max": 10, "step": 1},
         },
     },
 
@@ -431,34 +440,40 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Feng et al.",
         "year": 2018,
         "arxiv": "1804.07781",
-        "desc": "The only deletion-based attack: iteratively removes the least important word "
-                "until prediction changes or minimal sufficient input is reached. Exposes models "
-                "that maintain predictions even after most content is removed, revealing "
-                "pathological over-confidence and reliance on spurious features. EMNLP 2018.",
+        "desc": "Exact match to TextAttack InputReductionFeng2018 recipe. Iteratively removes "
+                "the least important word while MAINTAINING the model prediction, exposing "
+                "pathological over-confidence. Stopwords are protected from deletion. Word "
+                "importance is scored by leave-one-out InputReduction score; greedy search "
+                "accepts only deletions that keep the same predicted label. EMNLP 2018.",
         "params": {
             "max_reduction_ratio": {"type": "float", "default": 0.7, "min": 0.1, "max": 0.95, "step": 0.05},
             "stop_at_length": {"type": "int", "default": 1, "min": 1, "max": 10, "step": 1},
         },
     },
 
-    # ── Word-Level (perplexity-constrained) ──────────────────────────────
+    # ── Word-Level (LM-constrained) ──────────────────────────────────────
     "Kuleshov2017": {
         "cat": "Word-Level",
         "threat": "blackbox",
         "paper": "Adversarial Examples for Natural Language Classification Problems",
         "authors": "Kuleshov et al.",
         "year": 2018,
-        "arxiv": "1707.05461",
-        "desc": "Greedy word substitution constrained by GPT-2 language model perplexity "
-                "instead of sentence-embedding similarity (USE). Candidates from counter-fitted "
-                "embeddings are accepted only if they don't increase perplexity beyond a ratio "
-                "threshold. Produces more grammatically natural adversarial examples than "
-                "USE-constrained attacks. TextAttack Kuleshov2017 recipe.",
+        "arxiv": "",
+        "desc": "Exact match to TextAttack Kuleshov2017 recipe (OpenReview r1QZ3zbAZ). "
+                "GreedySearch (BeamSearch beam_width=1): at each step, generates all "
+                "single-word substitutions across all eligible positions and selects the "
+                "globally best candidate. WordSwapEmbedding (counter-fitted PARAGRAM-SL999, "
+                "N=15). Constraints: RepeatModification, StopwordModification (hard block), "
+                "MaxWordsPerturbed(δ=0.5), ThoughtVector(λ₁=0.2, max_euclidean — squared "
+                "Euclidean distance between mean counter-fitted GloVe sentence embeddings), "
+                "GPT2(λ₂=2.0 nats — per-word log-prob diff at substitution position "
+                "given original prefix). Goal: UntargetedClassification(τ=0.7).",
         "params": {
-            "max_candidates": {"type": "int", "default": 50, "min": 5, "max": 200, "step": 5},
-            "max_perplexity_ratio": {"type": "float", "default": 4.0, "min": 1.5, "max": 10.0, "step": 0.5},
-            "max_perturbation_ratio": {"type": "float", "default": 0.3, "min": 0.05, "max": 1.0, "step": 0.05},
-            "embedding_cos_threshold": {"type": "float", "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05},
+            "max_candidates": {"type": "int", "default": 15, "min": 5, "max": 200, "step": 5},
+            "max_log_prob_diff": {"type": "float", "default": 2.0, "min": 0.5, "max": 10.0, "step": 0.5},
+            "max_perturbation_ratio": {"type": "float", "default": 0.5, "min": 0.05, "max": 1.0, "step": 0.05},
+            "thought_vector_threshold": {"type": "float", "default": 0.2, "min": 0.05, "max": 2.0, "step": 0.05},
+            "target_max_score": {"type": "float", "default": 0.7, "min": 0.1, "max": 1.0, "step": 0.05},
         },
     },
 
@@ -470,16 +485,31 @@ TEXT_ATTACK_REGISTRY = {
         "authors": "Cheng et al.",
         "year": 2020,
         "arxiv": "1803.01128",
-        "desc": "Projected gradient attack operating in continuous EMBEDDING SPACE — the only "
-                "attack that applies PGD directly to token embeddings then projects back to "
-                "nearest discrete tokens. Enables gradient-based optimization impossible with "
-                "purely discrete methods. Adapted from seq2seq formulation for classification. "
-                "ICLR 2020.",
+        "desc": "Exact implementation of Seq2Sick projected gradient attack (Algorithm 1, "
+                "AAAI 2020). Optimises min_δ L(X+δ) + λ₁·Σ‖δᵢ‖₂ + λ₂·Σmin‖xᵢ+δᵢ−wⱼ‖² "
+                "with group lasso (ℓ₂,₁) proximal operator for sparse word changes and "
+                "gradient regularisation to keep perturbations near valid embeddings. "
+                "Two attack modes: non-overlapping (Eq. 3, output differs at every "
+                "position) and targeted keyword (Eq. 7 with collision mask Eq. 6, "
+                "keywords appear in output). For seq2seq models: exact match to "
+                "paper and official code (cmhcbb/Seq2Sick). For classifiers: same "
+                "optimisation framework with CW-style hinge loss. AAAI 2020.",
         "params": {
-            "num_iterations": {"type": "int", "default": 30, "min": 5, "max": 100, "step": 5},
-            "step_size": {"type": "float", "default": 0.01, "min": 0.001, "max": 0.1, "step": 0.005},
-            "max_perturbation_ratio": {"type": "float", "default": 0.3, "min": 0.05, "max": 1.0, "step": 0.05},
-            "similarity_threshold": {"type": "float", "default": 0.7, "min": 0.3, "max": 1.0, "step": 0.05},
+            "attack_mode": {"type": "select", "default": "non_overlapping",
+                            "options": ["non_overlapping", "targeted_keyword"],
+                            "desc": "Non-overlapping: output differs at every position (Eq. 3). "
+                                    "Targeted keyword: specified keywords appear in output (Eq. 7)."},
+            "target_keywords": {"type": "str", "default": "",
+                                "desc": "Comma-separated target keywords for targeted_keyword mode"},
+            "num_iterations": {"type": "int", "default": 200, "min": 10, "max": 500, "step": 10},
+            "const": {"type": "float", "default": 1.0, "min": 0.1, "max": 10.0, "step": 0.1,
+                      "desc": "Weight on adversarial loss (paper: λ₁=λ₂=1)"},
+            "confidence_margin": {"type": "float", "default": 0.0, "min": 0.0, "max": 5.0, "step": 0.1,
+                                  "desc": "Hinge loss confidence margin ε (paper: ≥0, larger → more confident)"},
+            "group_lasso": {"type": "bool", "default": True,
+                            "desc": "Group lasso (ℓ₂,₁) regularisation for sparse word changes"},
+            "grad_reg": {"type": "bool", "default": True,
+                         "desc": "Gradient regularisation (penalise distance to nearest valid embedding)"},
         },
     },
 
@@ -490,15 +520,18 @@ TEXT_ATTACK_REGISTRY = {
         "paper": "It's Morphin' Time! Combating Linguistic Discrimination with Inflectional Perturbations",
         "authors": "Tan et al.",
         "year": 2020,
-        "arxiv": "2009.11112",
-        "desc": "Inflectional morphology attack: changes grammatical inflection (verb tense, "
-                "noun number, adjective degree) rather than substituting synonyms or introducing "
-                "typos. Linguistically principled: 'walked'→'walks', 'cats'→'cat', 'better'→'best'. "
-                "Uses NLTK lemmatization + rule-based inflection generation. Tests whether models "
-                "are sensitive to valid grammatical form variations.",
+        "arxiv": "2005.04364",
+        "desc": "Exact match with official Salesforce MorpheuS (github.com/salesforce/morpheus). "
+                "Greedy sequential inflectional morphology attack: forward and backward passes "
+                "through all inflectable positions (NOUN, VERB, ADJ), greedily committing "
+                "the inflection that maximally reduces model confidence at each step. Uses "
+                "lemminflect for linguistically accurate inflection generation, correctly "
+                "handling irregular forms (went→go, children→child, better→good). "
+                "No stopword filtering, no semantic similarity constraint, no perturbation "
+                "budget — matching the official algorithm exactly.",
         "params": {
-            "max_perturbation_ratio": {"type": "float", "default": 0.3, "min": 0.05, "max": 1.0, "step": 0.05},
-            "similarity_threshold": {"type": "float", "default": 0.8, "min": 0.5, "max": 1.0, "step": 0.05},
+            "constrain_pos": {"type": "bool", "default": True,
+                              "desc": "Restrict inflections to matching POS (official default)"},
         },
     },
 }

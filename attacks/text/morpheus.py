@@ -1,26 +1,30 @@
 """
-MorpheuS Attack — Tan et al., 2020 (arXiv:2009.11112)
+MorpheuS Attack — Tan et al., 2020 (ACL, arXiv:2005.04364)
 
 It's Morphin' Time! Combating Linguistic Discrimination with
 Inflectional Perturbations.
 
-Inflectional morphology attack: perturbs words by changing their
-grammatical inflection (verb tense, noun number, adjective degree)
-rather than substituting with synonyms or introducing typos.
+Exact reimplementation of the official Salesforce algorithm
+(github.com/salesforce/morpheus), adapted for text classification.
 
-Key distinction from other attacks:
-  - Character attacks (DeepWordBug, Pruthi): random noise, misspellings
-  - Word attacks (TextFooler, BERT-Attack): semantic substitution
-  - MorpheuS: linguistically principled form changes that preserve
-    the stem but alter grammatical properties
+Algorithm (Algorithm 1 — official pseudocode):
+  1. Tokenize and POS-tag (NLTK, universal tagset)
+  2. Generate inflection candidates per position (lemminflect)
+     - Only NOUN, VERB, ADJ are inflectable
+     - POS-constrained inflections (constrain_pos=True)
+  3. FORWARD PASS: iterate left-to-right through positions
+     - At each position, try all inflections
+     - Pick the inflection that maximally reduces evaluation metric
+     - Apply it (greedy commitment)
+  4. BACKWARD PASS: same procedure, right-to-left
+  5. Return the better of forward and backward results
 
-Examples:
-  - "walked" → "walks" / "walking" / "walk" (verb tense)
-  - "cats" → "cat" (noun number)
-  - "better" → "good" / "best" (adjective degree)
-  - "happily" → "happier" / "happiest" (adverb form)
+No word importance ranking, no semantic similarity constraint,
+no perturbation budget — matching the official algorithm exactly.
 
-Uses NLTK lemmatization + rule-based inflection generation.
+References:
+  Paper — https://aclanthology.org/2020.acl-main.263/
+  Code  — https://github.com/salesforce/morpheus
 """
 
 import logging
@@ -28,148 +32,123 @@ import random
 
 logger = logging.getLogger("textattack.attacks.morpheus")
 
-# ── Inflection rules by POS category ────────────────────────────────────
+# Inflectable universal POS categories.
+# Exact match: MorpheusBase.get_inflections() → have_inflections
+_HAVE_INFLECTIONS = frozenset({"NOUN", "VERB", "ADJ"})
 
-_VERB_INFLECTIONS = {
-    "VB":  lambda w: _verb_forms(w),     # base → all forms
-    "VBD": lambda w: _verb_forms(w),     # past → all forms
-    "VBG": lambda w: _verb_forms(w),     # gerund → all forms
-    "VBN": lambda w: _verb_forms(w),     # past participle → all forms
-    "VBP": lambda w: _verb_forms(w),     # present non-3sg → all forms
-    "VBZ": lambda w: _verb_forms(w),     # present 3sg → all forms
-    "verb": lambda w: _verb_forms(w),    # heuristic fallback tag
-}
-
-_NOUN_TAGS = {"NN", "NNS", "NNP", "NNPS", "noun"}
-_ADJ_TAGS = {"JJ", "JJR", "JJS", "adj"}
-_ADV_TAGS = {"RB", "RBR", "RBS", "adv"}
+_PUNCT_CHARS = ".,!?;:'\"()[]{}"
 
 
-def _verb_forms(word: str) -> list[str]:
-    """Generate verb inflection candidates."""
-    w = word.lower()
-    forms = set()
+def _get_universal_pos_tags(words: list[str]) -> list[str]:
+    """POS-tag words using NLTK with universal tagset.
 
-    # Try to get lemma via NLTK
+    Exact match: official uses nltk.pos_tag(tokens, tagset='universal').
+    """
     try:
-        from nltk.stem import WordNetLemmatizer
-        wnl = WordNetLemmatizer()
-        lemma = wnl.lemmatize(w, pos='v')
+        import nltk
+        tagged = nltk.pos_tag(words, tagset='universal')
+        # Official: replace POS with '.' for words containing '&'
+        return [
+            '.' if '&' in w else tag
+            for (w, tag) in tagged
+        ]
     except (ImportError, LookupError):
-        lemma = w
-
-    # Generate inflected forms from lemma
-    forms.add(lemma)                           # base: "walk"
-
-    # -s (3rd person singular present)
-    if lemma.endswith(("s", "sh", "ch", "x", "z")):
-        forms.add(lemma + "es")
-    elif lemma.endswith("y") and len(lemma) > 1 and lemma[-2] not in "aeiou":
-        forms.add(lemma[:-1] + "ies")
-    else:
-        forms.add(lemma + "s")
-
-    # -ing (present participle)
-    if lemma.endswith("e") and not lemma.endswith("ee"):
-        forms.add(lemma[:-1] + "ing")
-    elif lemma.endswith("ie"):
-        forms.add(lemma[:-2] + "ying")
-    elif (len(lemma) >= 3 and lemma[-1] not in "aeiouwxy"
-          and lemma[-2] in "aeiou" and lemma[-3] not in "aeiou"):
-        forms.add(lemma + lemma[-1] + "ing")
-    else:
-        forms.add(lemma + "ing")
-
-    # -ed (past tense / past participle)
-    if lemma.endswith("e"):
-        forms.add(lemma + "d")
-    elif lemma.endswith("y") and len(lemma) > 1 and lemma[-2] not in "aeiou":
-        forms.add(lemma[:-1] + "ied")
-    elif (len(lemma) >= 3 and lemma[-1] not in "aeiouwxy"
-          and lemma[-2] in "aeiou" and lemma[-3] not in "aeiou"):
-        forms.add(lemma + lemma[-1] + "ed")
-    else:
-        forms.add(lemma + "ed")
-
-    forms.discard(w)
-    return [f for f in forms if f]
+        from utils.text_utils import simple_pos_tag
+        _map = {
+            "noun": "NOUN", "verb": "VERB", "adj": "ADJ",
+            "adv": "ADV", "other": "X",
+        }
+        return [_map.get(simple_pos_tag(w), "X") for w in words]
 
 
-def _noun_forms(word: str) -> list[str]:
-    """Generate noun number variants (singular ↔ plural)."""
-    w = word.lower()
-    forms = set()
+def _get_token_inflections(
+    orig_tokens: list[str],
+    pos_tags: list[str],
+    constrain_pos: bool = True,
+) -> list[tuple[int, list[str]]]:
+    """Get inflection candidates for all inflectable positions.
 
-    try:
-        from nltk.stem import WordNetLemmatizer
-        wnl = WordNetLemmatizer()
-        lemma = wnl.lemmatize(w, pos='n')
-    except (ImportError, LookupError):
-        lemma = w
+    Exact match with official MorpheusBase.get_inflections().
+    """
+    import lemminflect
 
-    forms.add(lemma)  # singular
+    token_inflections = []
 
-    # Pluralize
-    if lemma.endswith(("s", "sh", "ch", "x", "z")):
-        forms.add(lemma + "es")
-    elif lemma.endswith("y") and len(lemma) > 1 and lemma[-2] not in "aeiou":
-        forms.add(lemma[:-1] + "ies")
-    elif lemma.endswith("f"):
-        forms.add(lemma[:-1] + "ves")
-    elif lemma.endswith("fe"):
-        forms.add(lemma[:-2] + "ves")
-    else:
-        forms.add(lemma + "s")
+    for i, word in enumerate(orig_tokens):
+        lemmas = lemminflect.getAllLemmas(word)
+        if lemmas and pos_tags[i] in _HAVE_INFLECTIONS:
+            # Lemma selection (exact match with official)
+            if pos_tags[i] in lemmas:
+                lemma = lemmas[pos_tags[i]][0]
+            else:
+                lemma = random.choice(list(lemmas.values()))[0]
 
-    forms.discard(w)
-    return [f for f in forms if f]
+            # Get inflections (exact match with official)
+            if constrain_pos:
+                inflections_dict = lemminflect.getAllInflections(
+                    lemma, upos=pos_tags[i],
+                )
+            else:
+                inflections_dict = lemminflect.getAllInflections(lemma)
 
+            # Flatten and deduplicate (exact match with official)
+            inflections = list(set(
+                infl
+                for tup in inflections_dict.values()
+                for infl in tup
+            ))
 
-def _adj_forms(word: str) -> list[str]:
-    """Generate adjective degree variants (positive/comparative/superlative)."""
-    w = word.lower()
-    forms = set()
+            # Shuffle (exact match with official random.shuffle)
+            random.shuffle(inflections)
+            token_inflections.append((i, inflections))
 
-    try:
-        from nltk.stem import WordNetLemmatizer
-        wnl = WordNetLemmatizer()
-        lemma = wnl.lemmatize(w, pos='a')
-    except (ImportError, LookupError):
-        lemma = w
-
-    forms.add(lemma)  # positive
-
-    if len(lemma) <= 7:  # short adjectives use -er/-est
-        if lemma.endswith("e"):
-            forms.add(lemma + "r")
-            forms.add(lemma + "st")
-        elif lemma.endswith("y") and len(lemma) > 1:
-            forms.add(lemma[:-1] + "ier")
-            forms.add(lemma[:-1] + "iest")
-        else:
-            forms.add(lemma + "er")
-            forms.add(lemma + "est")
-
-    # Long adjectives use more/most (not a word form change, skip)
-    forms.discard(w)
-    return [f for f in forms if f]
+    return token_inflections
 
 
-def _adv_forms(word: str) -> list[str]:
-    """Generate adverb variants."""
-    w = word.lower()
-    forms = set()
+def _search_classification(
+    model_wrapper,
+    orig_tokenized: list[str],
+    token_inflections: list[tuple[int, list[str]]],
+    orig_label_idx: int,
+    orig_conf_on_label: float,
+    backward: bool = False,
+) -> tuple[list[str], float, int]:
+    """Greedy sequential search — line-for-line match of official search_nmt().
 
-    # -ly adverbs: try base adjective
-    if w.endswith("ly") and len(w) > 3:
-        base = w[:-2]
-        if base.endswith("i"):
-            base = base[:-1] + "y"
-        forms.add(base)
-        forms.update(_adj_forms(base))
+    Adaptation: instead of get_bleu(perturbed, reference) returning BLEU,
+    we use predict_probs(perturbed)[orig_label_idx] returning confidence
+    on the original label.  Lower = better attack in both cases.
+    """
+    perturbed_tokenized = list(orig_tokenized)
+    best_conf = orig_conf_on_label
+    num_queries = 0
 
-    forms.discard(w)
-    return [f for f in forms if f]
+    inflections_order = list(token_inflections)
+    if backward:
+        inflections_order = list(reversed(inflections_order))
+
+    for pos, inflections in inflections_order:
+        best_infl = orig_tokenized[pos]  # Default: original word
+
+        for infl in inflections:
+            perturbed_tokenized[pos] = infl
+            perturbed = " ".join(perturbed_tokenized)
+
+            probs = model_wrapper.predict_probs(perturbed)
+            num_queries += 1
+
+            curr_conf = (
+                probs[orig_label_idx]
+                if orig_label_idx < len(probs)
+                else 1.0
+            )
+            if curr_conf < best_conf:
+                best_conf = curr_conf
+                best_infl = infl
+
+        perturbed_tokenized[pos] = best_infl
+
+    return perturbed_tokenized, best_conf, num_queries
 
 
 def run_morpheus(
@@ -177,143 +156,106 @@ def run_morpheus(
     tokenizer,
     text: str,
     target_label: str = None,
-    max_perturbation_ratio: float = 0.3,
-    similarity_threshold: float = 0.8,
+    constrain_pos: bool = True,
 ) -> str:
-    """MorpheuS attack: inflectional morphology perturbations.
+    """MorpheuS attack — exact Algorithm 1 from Tan et al., ACL 2020.
 
-    Changes grammatical inflection of words (verb tense, noun number,
-    adjective degree) to test whether models are sensitive to
-    linguistically valid form variations.
+    Adapted for classification: minimises P(y_orig | x') instead of BLEU.
 
     Args:
-        model_wrapper: wrapped model with .predict() interface.
+        model_wrapper: wrapped model with .predict() / .predict_probs().
         tokenizer: HuggingFace tokenizer (unused, API compat).
         text: input text to attack.
         target_label: target class (None = untargeted).
-        max_perturbation_ratio: max fraction of words to inflect.
-        similarity_threshold: min semantic similarity for result.
+        constrain_pos: restrict inflections to matching POS (default True,
+            matching official constrain_pos parameter).
 
     Returns: adversarial text (str).
     """
-    from utils.text_utils import get_words_and_spans, replace_word_at, pos_tag_words, is_stopword
-    from utils.text_constraints import compute_semantic_similarity
+    from utils.text_utils import get_words_and_spans
 
-    logger.info(
-        "MorpheuS: starting (max_pert=%.2f, sim=%.2f)",
-        max_perturbation_ratio, similarity_threshold,
-    )
+    logger.info("MorpheuS: starting attack")
 
     words_spans = get_words_and_spans(text)
     if not words_spans:
         return text
 
-    words = [w for w, _, _ in words_spans]
-    pos_tags = pos_tag_words(words)
-    max_perturbs = max(1, int(len(words) * max_perturbation_ratio))
+    # Separate trailing punctuation for clean lemminflect lookup,
+    # then reattach after inflection (adapter for regex tokeniser vs
+    # official Moses tokeniser which splits punctuation into tokens).
+    raw_tokens = [w for w, _, _ in words_spans]
+    clean_tokens = [w.rstrip(_PUNCT_CHARS) for w in raw_tokens]
+    suffixes = [
+        w[len(c):] if c else ""
+        for w, c in zip(raw_tokens, clean_tokens)
+    ]
+    clean_tokens = [c if c else w for c, w in zip(clean_tokens, raw_tokens)]
 
-    orig_label, orig_conf, _ = model_wrapper.predict(text)
+    # POS tag (NLTK, universal tagset — matching official)
+    pos_tags = _get_universal_pos_tags(clean_tokens)
 
-    # Build candidates for each position
-    position_candidates: list[tuple[int, list[str]]] = []
+    # Original prediction (1 query — matching official)
+    orig_label, orig_conf, orig_label_idx = model_wrapper.predict(text)
+    orig_probs = model_wrapper.predict_probs(text)
+    orig_conf_on_label = (
+        orig_probs[orig_label_idx]
+        if orig_label_idx < len(orig_probs)
+        else orig_conf
+    )
 
-    for i, (word, pos) in enumerate(zip(words, pos_tags)):
-        if is_stopword(word) or len(word) <= 2:
-            continue
+    # Build inflection candidates (exact match with official)
+    token_inflections_clean = _get_token_inflections(
+        clean_tokens, pos_tags, constrain_pos,
+    )
 
-        # Strip trailing punctuation for inflection generation
-        clean = word.rstrip(".,!?;:'\"()[]{}").lower()
-        if len(clean) <= 2:
-            continue
-
-        inflections = []
-        if pos in _VERB_INFLECTIONS:
-            inflections = _verb_forms(clean)
-        elif pos in _NOUN_TAGS:
-            inflections = _noun_forms(clean)
-        elif pos in _ADJ_TAGS:
-            inflections = _adj_forms(clean)
-        elif pos in _ADV_TAGS:
-            inflections = _adv_forms(clean)
-        elif pos == "other":
-            # Heuristic fallback missed POS — try all types and take any hits
-            for gen in (_verb_forms, _noun_forms, _adj_forms):
-                inflections = gen(clean)
-                if inflections:
-                    break
-
-        # Re-attach any trailing punctuation that was on the original word
-        suffix = word[len(word.rstrip(".,!?;:'\"()[]{}")):]
-        if suffix and inflections:
-            inflections = [f + suffix for f in inflections]
-
+    # Reattach trailing punctuation to inflected forms
+    token_inflections: list[tuple[int, list[str]]] = []
+    for pos, inflections in token_inflections_clean:
+        s = suffixes[pos]
+        if s:
+            inflections = [infl + s for infl in inflections]
         if inflections:
-            position_candidates.append((i, inflections))
+            token_inflections.append((pos, inflections))
 
-    if not position_candidates:
+    if not token_inflections:
         logger.info("MorpheuS: no inflectable words found")
         return text
 
-    # Score each position by importance (delete-one confidence drop)
-    from utils.text_word_importance import delete_one_importance
-    importance = delete_one_importance(model_wrapper, text, orig_label)
-    importance_map = {idx: score for idx, score in importance}
-
-    # Sort positions by importance (most important first)
-    position_candidates.sort(
-        key=lambda x: importance_map.get(x[0], 0.0), reverse=True,
+    # ── Forward search (matching official) ──────────────────────────────
+    fwd_tokens, fwd_conf, fwd_q = _search_classification(
+        model_wrapper, raw_tokens, token_inflections,
+        orig_label_idx, orig_conf_on_label, backward=False,
     )
+    forward_text = " ".join(fwd_tokens)
 
-    current_text = text
-    perturbations_made = 0
-    modified_indices: set[int] = set()
+    # Early return if forward achieved label flip
+    # (matches official: if forward_bleu == 0: return)
+    fwd_label, _, _ = model_wrapper.predict(forward_text)
+    if target_label is not None:
+        if fwd_label.lower() == target_label.lower():
+            logger.info("MorpheuS: success on forward pass")
+            return forward_text
+    else:
+        if fwd_label != orig_label:
+            logger.info("MorpheuS: success on forward pass")
+            return forward_text
 
-    for word_idx, inflections in position_candidates:
-        if perturbations_made >= max_perturbs:
-            break
+    # ── Backward search (matching official) ─────────────────────────────
+    bwd_tokens, bwd_conf, bwd_q = _search_classification(
+        model_wrapper, raw_tokens, token_inflections,
+        orig_label_idx, orig_conf_on_label, backward=True,
+    )
+    backward_text = " ".join(bwd_tokens)
 
-        if word_idx in modified_indices:
-            continue
-
-        best_text = None
-        best_impact = -1.0
-
-        for inflected in inflections:
-            # Preserve original capitalization
-            orig_word = words[word_idx]
-            if orig_word[0].isupper():
-                inflected = inflected.capitalize()
-            if orig_word.isupper():
-                inflected = inflected.upper()
-
-            candidate_text = replace_word_at(current_text, word_idx, inflected)
-
-            sim = compute_semantic_similarity(current_text, candidate_text)
-            if sim < similarity_threshold:
-                continue
-
-            label, conf, _ = model_wrapper.predict(candidate_text)
-
-            if target_label is not None:
-                if label.lower() == target_label.lower():
-                    logger.info("MorpheuS: success at perturbation %d (%s→%s)",
-                                perturbations_made + 1, orig_word, inflected)
-                    return candidate_text
-            else:
-                if label != orig_label:
-                    logger.info("MorpheuS: success at perturbation %d (%s→%s)",
-                                perturbations_made + 1, orig_word, inflected)
-                    return candidate_text
-
-            impact = orig_conf - conf
-            if impact > best_impact:
-                best_impact = impact
-                best_text = candidate_text
-
-        if best_text is not None:
-            current_text = best_text
-            perturbations_made += 1
-            modified_indices.add(word_idx)
-
-    logger.info("MorpheuS: finished (%d perturbations)", perturbations_made)
-    return current_text
+    # Return the better result (matching official:
+    #   if forward_bleu < backward_bleu: return forward)
+    if fwd_conf <= bwd_conf:
+        logger.info(
+            "MorpheuS: returning forward result (conf=%.4f)", fwd_conf,
+        )
+        return forward_text
+    else:
+        logger.info(
+            "MorpheuS: returning backward result (conf=%.4f)", bwd_conf,
+        )
+        return backward_text
