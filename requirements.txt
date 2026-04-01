@@ -19,3 +19,7 @@ redis==7.1.0
 sentence-transformers>=2.2.0
 sentencepiece>=0.1.99
 nltk>=3.8.0
+benepar>=0.2.0
+lemminflect>=0.2.0
+subword-nmt>=0.3.8
+gdown>=4.6.0

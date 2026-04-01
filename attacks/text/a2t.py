@@ -9,8 +9,9 @@ Exact match with TextAttack A2TYoo2021 recipe:
     + WordEmbeddingDistance(min_cos_sim=0.8)
   - MLM variant (mlm=True): WordSwapMaskedLM(method="bae",
     max_candidates=20, min_confidence=0.0, model="bert-base-uncased")
-  - SBERT("stsb-distilbert-base", threshold=0.9, metric="cosine",
-    window_size=15, compare_against_original=True)
+  - SBERT("stsb-distilbert-base", threshold=0.9, metric="cosine")
+    (no window_size — defaults to full-sentence comparison,
+     compare_against_original=True)
   - PartOfSpeech(allow_verb_noun_swap=False)
   - MaxModificationRate(max_rate=0.1, min_threshold=4)
   - RepeatModification, StopwordModification
@@ -22,6 +23,7 @@ Reference: TextAttack A2TYoo2021 recipe
 """
 
 import logging
+import math
 
 from models.text_loader import get_label_index
 
@@ -31,7 +33,6 @@ _A2T_SBERT_MODEL = "stsb-distilbert-base"
 _a2t_sbert = None
 _a2t_sbert_loaded = False
 
-_SBERT_WINDOW_SIZE = 15
 
 _UNIVERSAL_POS_MAP = {
     "VB": "VERB", "VBD": "VERB", "VBG": "VERB", "VBN": "VERB",
@@ -86,48 +87,23 @@ def _sbert_cosine_sim(text_a: str, text_b: str) -> float:
     ).item()
 
 
-def _windowed_text(words: list[str], index: int, window_size: int) -> str:
-    """Extract text window centred on index.
-
-    Matches TextAttack AttackedText.text_window_around_index().
-    """
-    half = (window_size - 1) // 2
-    if index - half < 0:
-        start = 0
-        end = min(window_size, len(words))
-    elif index + half >= len(words):
-        start = max(0, len(words) - window_size)
-        end = len(words)
-    else:
-        start = index - half
-        end = index + half + 1
-    return " ".join(words[start:end])
-
-
 def _a2t_sbert_check(
     original_text: str,
     candidate_text: str,
     word_idx: int,
     threshold: float,
 ) -> tuple[bool, float]:
-    """Windowed SBERT cosine similarity check.
+    """Full-sentence SBERT cosine similarity check.
 
     Matches TextAttack SBERT(model_name="stsb-distilbert-base",
-    threshold=0.9, metric="cosine", window_size=15,
-    skip_text_shorter_than_window=False, compare_against_original=True).
+    threshold=0.9, metric="cosine", compare_against_original=True).
+    Official A2T does not pass window_size, so it defaults to None
+    (full-sentence comparison).
     """
-    from utils.text_utils import get_words_and_spans
-
-    orig_words = [w for w, _, _ in get_words_and_spans(original_text)]
-    cand_words = [w for w, _, _ in get_words_and_spans(candidate_text)]
-
-    orig_window = _windowed_text(orig_words, word_idx, _SBERT_WINDOW_SIZE)
-    cand_window = _windowed_text(cand_words, word_idx, _SBERT_WINDOW_SIZE)
-
-    if not orig_window.strip() or not cand_window.strip():
+    if not original_text.strip() or not candidate_text.strip():
         return False, 0.0
 
-    sim = _sbert_cosine_sim(orig_window, cand_window)
+    sim = _sbert_cosine_sim(original_text, candidate_text)
     return sim >= threshold, sim
 
 
@@ -156,7 +132,8 @@ def run_a2t(
       - Constraints: RepeatModification, StopwordModification,
         PartOfSpeech(allow_verb_noun_swap=False),
         MaxModificationRate(max_rate=0.1, min_threshold=4),
-        SBERT("stsb-distilbert-base", threshold=0.9, metric="cosine"),
+        SBERT("stsb-distilbert-base", threshold=0.9, metric="cosine")
+        (full-sentence, compare_against_original=True),
         WordEmbeddingDistance(min_cos_sim=0.8) [default variant only]
 
     Returns: adversarial text (str).
@@ -183,11 +160,8 @@ def run_a2t(
     num_words = len(words)
 
     # MaxModificationRate(max_rate, min_threshold):
-    # rate enforced only when num_words >= min_threshold
-    if num_words >= min_threshold:
-        max_perturbs = max(1, int(num_words * max_modification_rate))
-    else:
-        max_perturbs = num_words
+    # max(ceil(num_words * max_rate), min_threshold) — matches official exactly
+    max_perturbs = max(math.ceil(num_words * max_modification_rate), min_threshold)
 
     orig_label, orig_conf, orig_label_idx = model_wrapper.predict(text)
     orig_probs = model_wrapper.predict_probs(text)
@@ -252,12 +226,16 @@ def run_a2t(
             continue
 
         # PartOfSpeech(allow_verb_noun_swap=False): universal tagset, exact match
+        # Tag candidate in context (replace in sentence, then POS-tag) to match
+        # TextAttack PartOfSpeech constraint behaviour.
         if word_idx < len(orig_pos_tags):
             word_upos = _to_universal_pos(orig_pos_tags[word_idx])
             filtered = []
             for cand in candidates:
-                cand_tags = pos_tag_words([cand])
-                if cand_tags and _to_universal_pos(cand_tags[0]) == word_upos:
+                cand_sentence_words = list(current_words)
+                cand_sentence_words[word_idx] = cand
+                cand_tags = pos_tag_words(cand_sentence_words)
+                if word_idx < len(cand_tags) and _to_universal_pos(cand_tags[word_idx]) == word_upos:
                     filtered.append(cand)
             if filtered:
                 candidates = filtered
@@ -269,7 +247,7 @@ def run_a2t(
         for cand in candidates:
             candidate_text = replace_word_at(current_text, word_idx, cand)
 
-            # SBERT cosine: compare_against_original=True, window_size=15
+            # SBERT cosine: compare_against_original=True, full-sentence
             passes, sim = _a2t_sbert_check(
                 original_text, candidate_text, word_idx, similarity_threshold,
             )
