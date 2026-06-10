@@ -773,6 +773,8 @@ ATTACK_REGISTRY = {
             "kernel_size": {"label": "TI kernel size", "min": 3, "max": 15, "step": 2, "default": 5},
             "cfm_mix_prob": {"label": "CFM mix probability", "min": 0, "max": 0.5, "step": 0.01, "default": 0.1},
             "cfm_mix_upper": {"label": "CFM mix upper bound", "min": 0.1, "max": 1, "step": 0.05, "default": 0.75},
+            "sctc_lam": {"label": "Token-competition weight (λ)", "min": 0, "max": 2, "step": 0.1, "default": 0.5},
+            "sctc_temp": {"label": "Calibration temperature (T)", "min": 0.5, "max": 5, "step": 0.5, "default": 2.0},
             "r1_multi_image_strategy": {"label": "Multi-image strategy", "type": "select", "options": ["tile_shuffle", "progressive", "self_aug_bank", "self_mix"], "default": "tile_shuffle", "hiddenInInfo": True},
             "r1_multi_image_count": {"label": "Image count", "min": 2, "max": 30, "step": 1, "default": 10, "hiddenInInfo": True},
         },

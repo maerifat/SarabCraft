@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .sarabcraft_r1 import _CFMWrapper, _csa_transform, _make_ti_kernel
+from ._sctc_objective import SctcGridTap
 
 
 class _CFMBankWrapper(nn.Module):
@@ -216,12 +217,19 @@ def targeted_sarabcraft_r1_multi_image(
     mix_upper=0.75,
     cfm_strategy="tile_shuffle",
     n_images=10,
+    sctc_lam=0.5,
+    sctc_temp=2.0,
     quiet=False,
     ensemble_models=None,
     ensemble_mode="simultaneous",
 ):
     """
     SCTC (Spatially-Calibrated Token Competition) with selectable multi-image transfer strategies.
+
+    Adds the calibrated per-spatial-token competition term
+    (``sctc_lam * token_competition(temp=sctc_temp)``) on top of the logit
+    objective, matching the paper's SOTA recipe. ``sctc_lam=0`` recovers the
+    plain logit objective.
     """
     iterations = int(iterations)
     kernel_size = int(kernel_size) | 1
@@ -238,10 +246,11 @@ def targeted_sarabcraft_r1_multi_image(
 
     if not quiet:
         ensemble_tag = f", ensemble={n_models} ({ensemble_mode})" if n_models > 1 else ""
+        obj_tag = f"TokenComp(lam={sctc_lam},T={sctc_temp})" if sctc_lam > 0 else "LogitLoss"
         print(
-            f"[SarabCraft-R1-MI] target={target_class}, eps={epsilon:.4f}, "
+            f"[SCTC-MI] target={target_class}, eps={epsilon:.4f}, "
             f"iter={iterations}, strategy={cfm_strategy}, n_images={n_images}, "
-            f"mix_p={mix_prob}, mix_u={mix_upper}{ensemble_tag}",
+            f"mix_p={mix_prob}, mix_u={mix_upper}{ensemble_tag}, [{obj_tag}]",
             flush=True,
         )
 
@@ -258,6 +267,8 @@ def targeted_sarabcraft_r1_multi_image(
             mix_upper,
             n_images,
             alternating,
+            sctc_lam,
+            sctc_temp,
             quiet,
         )
 
@@ -272,6 +283,7 @@ def targeted_sarabcraft_r1_multi_image(
         iterations,
         dev,
     )
+    taps = [SctcGridTap(m) for m in all_models] if sctc_lam > 0 else []
 
     try:
         ti_kernel = _make_ti_kernel(kernel_size, device=dev)
@@ -287,11 +299,19 @@ def targeted_sarabcraft_r1_multi_image(
             x_aug = _csa_transform(x, sigma)
 
             if alternating:
-                logits = wrappers[t % n_models](x_aug)
+                active = [t % n_models]
             else:
-                logits = sum(wrapper(x_aug) for wrapper in wrappers) / n_models
+                active = list(range(n_models))
 
+            logits = sum(wrappers[idx](x_aug) for idx in active) / len(active)
             loss = logits.gather(1, target_t.unsqueeze(1)).sum()
+
+            if sctc_lam > 0:
+                for idx in active:
+                    term = taps[idx].token_term(target_t, sctc_temp)
+                    if term is not None:
+                        loss = loss + sctc_lam * term / len(active)
+
             g = torch.autograd.grad(loss, x)[0].detach()
 
             g = F.conv2d(g, ti_kernel, stride=1, padding="same", groups=3)
@@ -305,17 +325,19 @@ def targeted_sarabcraft_r1_multi_image(
             if not quiet and (t % 20 == 0 or t == iterations - 1):
                 with torch.no_grad():
                     pred = all_models[0](img_tensor + delta).argmax(1).item()
-                print(f"[SarabCraft-R1-MI] iter {t+1}/{iterations} | pred={pred}", flush=True)
+                print(f"[SCTC-MI] iter {t+1}/{iterations} | pred={pred}", flush=True)
 
         if not quiet:
             with torch.no_grad():
                 final_pred = all_models[0](img_tensor + delta).argmax(1).item()
                 tag = "SUCCESS" if final_pred == target_class else "NOT REACHED"
-                print(f"[SarabCraft-R1-MI] {tag} (pred={final_pred})", flush=True)
+                print(f"[SCTC-MI] {tag} (pred={final_pred})", flush=True)
 
     finally:
         for wrapper in wrappers:
             wrapper.cleanup()
+        for tp in taps:
+            tp.remove()
 
     return (img_tensor + delta).detach()
 
@@ -368,6 +390,8 @@ def _run_tile_shuffle(
     mix_upper,
     n_tiles,
     alternating,
+    sctc_lam,
+    sctc_temp,
     quiet,
 ):
     """Tile the source image into a pseudo-batch and run CFM across tiles."""
@@ -387,6 +411,7 @@ def _run_tile_shuffle(
         wrapper = _CFMWrapper(model, mix_prob=mix_prob, mix_upper=mix_upper, input_size=img_tensor.shape[-1])
         wrapper.record_clean(batch)
         wrappers.append(wrapper)
+    taps = [SctcGridTap(m) for m in all_models] if sctc_lam > 0 else []
 
     try:
         ti_kernel = _make_ti_kernel(kernel_size, device=dev)
@@ -398,11 +423,19 @@ def _run_tile_shuffle(
             x_aug = _csa_transform(x, sigma)
 
             if alternating:
-                logits = wrappers[t % n_models](x_aug)
+                active = [t % n_models]
             else:
-                logits = sum(wrapper(x_aug) for wrapper in wrappers) / n_models
+                active = list(range(n_models))
 
+            logits = sum(wrappers[idx](x_aug) for idx in active) / len(active)
             loss = logits.gather(1, tile_targets.unsqueeze(1)).sum()
+
+            if sctc_lam > 0:
+                for idx in active:
+                    term = taps[idx].token_term(tile_targets, sctc_temp)
+                    if term is not None:
+                        loss = loss + sctc_lam * term / len(active)
+
             g = torch.autograd.grad(loss, x)[0].detach()
 
             g = F.conv2d(g, ti_kernel, stride=1, padding="same", groups=3)
@@ -416,16 +449,18 @@ def _run_tile_shuffle(
             if not quiet and (t % 20 == 0 or t == iterations - 1):
                 with torch.no_grad():
                     pred = all_models[0](batch + delta).argmax(1)[0].item()
-                print(f"[SarabCraft-R1-MI|tile] iter {t+1}/{iterations} | pred={pred}", flush=True)
+                print(f"[SCTC-MI|tile] iter {t+1}/{iterations} | pred={pred}", flush=True)
 
         if not quiet:
             with torch.no_grad():
                 final_pred = all_models[0](batch + delta).argmax(1)[0].item()
                 tag = "SUCCESS" if final_pred == target_class else "NOT REACHED"
-                print(f"[SarabCraft-R1-MI|tile] {tag} (pred={final_pred})", flush=True)
+                print(f"[SCTC-MI|tile] {tag} (pred={final_pred})", flush=True)
 
     finally:
         for wrapper in wrappers:
             wrapper.cleanup()
+        for tp in taps:
+            tp.remove()
 
     return (batch[0:1] + delta[0:1]).detach()

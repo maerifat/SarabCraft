@@ -4,7 +4,15 @@ SCTC (Spatially-Calibrated Token Competition) core transfer attack.
 
 This module implements the standard SCTC transfer recipe:
 
-  CFM + CSA + MI + TI + logit maximisation
+  CFM + CSA + MI + TI + calibrated token-competition objective
+
+The defining objective is the calibrated per-spatial-token target competition
+term (see ``_sctc_objective.py``), added on top of the S4ST-style logit
+maximisation. This matches the experiment that produced the paper's SOTA
+numbers (``lab/.../h2h_final/run_h2h.py``): for each surrogate we apply the
+classifier head at every spatial location, calibrate the per-location logits,
+and reward the target class winning the softmax competition at every token —
+the signal a patch-based ViT picks up, which is what lifts CNN->ViT transfer.
 
 It operates in [0,1] pixel space. The router handles model-space
 normalisation before and after the attack.
@@ -14,6 +22,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from ._sctc_objective import SctcGridTap
 
 
 class _CFMWrapper(nn.Module):
@@ -137,12 +147,20 @@ def targeted_sarabcraft_r1(
     kernel_size=5,
     mix_prob=0.1,
     mix_upper=0.75,
+    sctc_lam=0.5,
+    sctc_temp=2.0,
     quiet=False,
     ensemble_models=None,
     ensemble_mode="simultaneous",
 ):
     """
     Standard SCTC (Spatially-Calibrated Token Competition) transfer attack with optional multi-model ensemble.
+
+    The objective is ``logit-max + sctc_lam * token_competition(temp=sctc_temp)``,
+    where the token-competition term is the calibrated per-spatial-token target
+    competition that defines SCTC. ``sctc_lam=0`` recovers the plain S4ST-style
+    logit objective. If a surrogate does not expose a usable spatial grid +
+    classifier head, the term is skipped for that model (graceful fallback).
     """
     iterations = int(iterations)
     kernel_size = int(kernel_size) | 1
@@ -155,14 +173,16 @@ def targeted_sarabcraft_r1(
     all_models = [model] + (ensemble_models or [])
     n_models = len(all_models)
     alternating = ensemble_mode == "alternating"
+    use_token_term = sctc_lam > 0
 
     if not quiet:
         ensemble_tag = f", ensemble={n_models} models ({ensemble_mode})" if n_models > 1 else ""
+        obj_tag = f"TokenComp(lam={sctc_lam},T={sctc_temp})" if use_token_term else "LogitLoss"
         print(
-            f"[SarabCraft-R1] target={target_class}, eps={epsilon:.4f}, "
+            f"[SCTC] target={target_class}, eps={epsilon:.4f}, "
             f"iter={iterations}, decay={decay}, ti_k={kernel_size}, "
             f"mix_p={mix_prob}, mix_u={mix_upper}{ensemble_tag}, "
-            f"[CFM,CSA,MI,TI,LogitLoss]",
+            f"[CFM,CSA,MI,TI,{obj_tag}]",
             flush=True,
         )
 
@@ -170,6 +190,10 @@ def targeted_sarabcraft_r1(
         _CFMWrapper(m, mix_prob=mix_prob, mix_upper=mix_upper, input_size=input_size)
         for m in all_models
     ]
+    taps = [SctcGridTap(m) for m in all_models] if use_token_term else []
+    if not quiet and use_token_term:
+        n_ok = sum(1 for tp in taps if tp.available)
+        print(f"[SCTC] token-competition grid tap active on {n_ok}/{n_models} surrogate(s)", flush=True)
     try:
         ti_kernel = _make_ti_kernel(kernel_size, device=dev)
 
@@ -184,11 +208,19 @@ def targeted_sarabcraft_r1(
             x_aug = _csa_transform(x, sigma)
 
             if alternating:
-                logits = cfm_wrappers[t % n_models](x_aug)
+                active = [t % n_models]
             else:
-                logits = sum(cfm(x_aug) for cfm in cfm_wrappers) / n_models
+                active = list(range(n_models))
 
+            logits = sum(cfm_wrappers[idx](x_aug) for idx in active) / len(active)
             loss = logits.gather(1, target_t.unsqueeze(1)).sum()
+
+            if use_token_term:
+                for idx in active:
+                    term = taps[idx].token_term(target_t, sctc_temp)
+                    if term is not None:
+                        loss = loss + sctc_lam * term / len(active)
+
             g = torch.autograd.grad(loss, x)[0].detach()
 
             g = F.conv2d(g, ti_kernel, stride=1, padding="same", groups=3)
@@ -202,16 +234,18 @@ def targeted_sarabcraft_r1(
             if not quiet and (t % 20 == 0 or t == iterations - 1):
                 with torch.no_grad():
                     pred = all_models[0](img_tensor + delta).argmax(dim=1).item()
-                print(f"[SarabCraft-R1] iter {t+1}/{iterations} | pred={pred}", flush=True)
+                print(f"[SCTC] iter {t+1}/{iterations} | pred={pred}", flush=True)
 
         if not quiet:
             with torch.no_grad():
                 final_pred = all_models[0](img_tensor + delta).argmax(dim=1).item()
                 tag = "SUCCESS" if final_pred == target_class else "NOT REACHED"
-                print(f"[SarabCraft-R1] {tag} (pred={final_pred})", flush=True)
+                print(f"[SCTC] {tag} (pred={final_pred})", flush=True)
 
     finally:
         for cfm in cfm_wrappers:
             cfm.cleanup()
+        for tp in taps:
+            tp.remove()
 
     return (img_tensor + delta).detach()

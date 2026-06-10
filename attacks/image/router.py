@@ -383,6 +383,8 @@ RAW_DISPATCH = {
             mix_upper=p.get('cfm_mix_upper', 0.75),
             cfm_strategy=p.get('r1_multi_image_strategy', 'tile_shuffle'),
             n_images=int(p.get('r1_multi_image_count', 10)),
+            sctc_lam=_p(p, 'sctc_lam', 0.5),
+            sctc_temp=_p(p, 'sctc_temp', 2.0),
             ensemble_models=ens,
             ensemble_mode=p.get('ensemble_mode', 'simultaneous'),
         ) if p.get("r1_multi_image") else targeted_sarabcraft_r1(
@@ -391,6 +393,8 @@ RAW_DISPATCH = {
             kernel_size=int(p.get('kernel_size', 5)),
             mix_prob=p.get('cfm_mix_prob', 0.1),
             mix_upper=p.get('cfm_mix_upper', 0.75),
+            sctc_lam=_p(p, 'sctc_lam', 0.5),
+            sctc_temp=_p(p, 'sctc_temp', 2.0),
             ensemble_models=ens,
             ensemble_mode=p.get('ensemble_mode', 'simultaneous'),
         ),
