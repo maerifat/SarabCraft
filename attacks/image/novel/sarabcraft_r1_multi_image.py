@@ -1,8 +1,8 @@
 """
-SarabCraft R1 multi-image transfer mode.
-=======================================
+SCTC (Spatially-Calibrated Token Competition) multi-image transfer mode.
+========================================================================
 
-This module extends the standard SarabCraft R1 recipe with selectable
+This module extends the standard SCTC recipe with selectable
 reference-bank strategies for harder single-image transfer studies.
 """
 
@@ -221,7 +221,7 @@ def targeted_sarabcraft_r1_multi_image(
     ensemble_mode="simultaneous",
 ):
     """
-    SarabCraft R1 with selectable multi-image transfer strategies.
+    SCTC (Spatially-Calibrated Token Competition) with selectable multi-image transfer strategies.
     """
     iterations = int(iterations)
     kernel_size = int(kernel_size) | 1

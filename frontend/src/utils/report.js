@@ -89,7 +89,7 @@ ${transferRows ? `
 
 <div class="footer">
 <p>SarabCraft v2.0 — Crafting illusions that machines believe.</p>
-<p style="margin-top:0.25rem">Report generated for Black Hat Arsenal 2026</p>
+<p style="margin-top:0.25rem">Report generated for Black Hat Arsenal Europe 2026</p>
 </div>
 </div>
 </body>

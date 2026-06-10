@@ -68,7 +68,7 @@ It enables researchers to generate, measure, and validate adversarial examples a
 AI models and systems.
 
 ### Capabilities
-- **61 Image Attack Algorithms** — FGSM, PGD, C&W, AutoAttack, SarabCraft R1, and 56 more transfer, optimization, and black-box methods
+- **61 Image Attack Algorithms** — FGSM, PGD, C&W, AutoAttack, SCTC (Spatially-Calibrated Token Competition), and 56 more transfer, optimization, and black-box methods
 - **8 Audio Attack Types** — Including ASR transcription, hidden commands, and psychoacoustic masking
 - **Transfer Verification** — Test adversarial examples against cloud APIs (AWS, Azure, GCP)
 - **Plugin System** — Extend with custom Python classifiers
@@ -76,7 +76,7 @@ AI models and systems.
 - **Perturbation Metrics** — L0, L1, L2, L∞, SSIM, PSNR
 
 ### Links
-- [Black Hat Arsenal](https://www.blackhat.com/arsenal.html)
+- [Black Hat Arsenal Europe](https://www.blackhat.com/eu-25/arsenal.html)
 - [GitHub Repository](https://github.com/mlsec-lab/mlsec)
     """,
     version="2.0.0",

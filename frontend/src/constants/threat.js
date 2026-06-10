@@ -1,4 +1,4 @@
-export const SARABCRAFT_R1_NAME = 'SarabCraft R1'
+export const SARABCRAFT_R1_NAME = 'SCTC (Spatially-Calibrated Token Competition)'
 
 export const THREAT_COLORS = {
   whitebox: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/30',

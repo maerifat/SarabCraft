@@ -49,7 +49,7 @@ export default function SarabCraftR1Panel({ params, getParam, setParam }) {
           <div>
             <div className="text-sm font-medium text-slate-200">Use multi-image transfer mode</div>
             <p className="text-xs text-slate-500 mt-1">
-              Unlock broader bank-building strategies for harder transfer experiments. Leave it off for the standard R1 path.
+              Unlock broader bank-building strategies for harder transfer experiments. Leave it off for the standard SCTC path.
             </p>
           </div>
         </label>

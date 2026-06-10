@@ -1,8 +1,8 @@
 """
-SarabCraft R1 core transfer attack.
-===================================
+SCTC (Spatially-Calibrated Token Competition) core transfer attack.
+===================================================================
 
-This module implements the standard SarabCraft R1 transfer recipe:
+This module implements the standard SCTC transfer recipe:
 
   CFM + CSA + MI + TI + logit maximisation
 
@@ -142,7 +142,7 @@ def targeted_sarabcraft_r1(
     ensemble_mode="simultaneous",
 ):
     """
-    Standard SarabCraft R1 transfer attack with optional multi-model ensemble.
+    Standard SCTC (Spatially-Calibrated Token Competition) transfer attack with optional multi-model ensemble.
     """
     iterations = int(iterations)
     kernel_size = int(kernel_size) | 1

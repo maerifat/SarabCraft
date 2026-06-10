@@ -73,7 +73,7 @@ export default function LandingPage() {
           items={[
             '61 image attacks across gradient, transfer, optimization, black-box, physical, and research categories',
             '28 transfer-optimized methods (SSA, Admix, BSR, FIA, NAA, TGR, LinBP, SGM, SIA, S4ST, CWA, SASD, and more)',
-            'Targeted studies including SarabCraft R1, and ensemble evaluation with AutoAttack',
+            'Targeted studies including SCTC (Spatially-Calibrated Token Competition), and ensemble evaluation with AutoAttack',
             'Run against 30+ built-in or custom models with perturbation metrics, GradCAM, and visual outputs',
           ]}
           action="Run Image Attack"

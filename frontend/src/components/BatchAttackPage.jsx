@@ -184,7 +184,7 @@ export default function BatchAttackPage() {
             <Select label="Attack" value={attack} onChange={setAttack} options={attackList.length ? attackList : ['PGD']} className="" />
             {attack === SARABCRAFT_R1_NAME && (
               <p className="text-[11px] text-slate-500">
-                Batch mode runs the standard R1 configuration. Use Image Attack or Robustness to enable multi-image transfer mode.
+                Batch mode runs the standard SCTC configuration. Use Image Attack or Robustness to enable multi-image transfer mode.
               </p>
             )}
             <div className="grid grid-cols-2 gap-3">

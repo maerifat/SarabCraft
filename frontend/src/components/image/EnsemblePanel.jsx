@@ -31,7 +31,7 @@ export default function EnsemblePanel({ attack, modelOpts, model, ensembleModels
             })}
           </div>
           {ensembleModels.length > 0 && attack === SARABCRAFT_R1_NAME && <Select label="Ensemble mode" value={ensembleMode} onChange={setEnsembleMode} options={['Simultaneous', 'Alternating']} className="max-w-xs" />}
-          {ensembleModels.length > 0 && attack !== SARABCRAFT_R1_NAME && <div className="text-[10px] text-slate-500 italic">Ensemble uses logit averaging (simultaneous). Alternating mode is available only with SarabCraft R1.</div>}
+          {ensembleModels.length > 0 && attack !== SARABCRAFT_R1_NAME && <div className="text-[10px] text-slate-500 italic">Ensemble uses logit averaging (simultaneous). Alternating mode is available only with SCTC.</div>}
         </div>
       )}
     </div>

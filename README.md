@@ -7,7 +7,7 @@ Crafting Illusions Machines Believe.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Black Hat Arsenal](https://img.shields.io/badge/Black%20Hat-Arsenal%202026-red.svg)](https://www.blackhat.com/arsenal.html)
+[![Black Hat Arsenal](https://img.shields.io/badge/Black%20Hat-Arsenal%20Europe%202026-red.svg)](https://www.blackhat.com/eu-25/arsenal.html)
 
 **SarabCraft is a multimodal adversarial AI research framework for crafting believable image, text, and audio attacks, validating transfer across real targets, and turning the results into evidence security teams can act on.**
 
@@ -157,11 +157,11 @@ Use Docker when you want the full analyst workflow, including long-running jobs,
 | **Physical** | Adversarial Patch | Optimises a small patch that causes misclassification when placed on any image. Works physically. |
 | | UAP | Universal Adversarial Perturbation: single image-agnostic noise that fools the model on most inputs. |
 | **Meta** | AutoAttack | Ensemble of APGD-CE, APGD-DLR, FAB, and Square. Parameter-free robustness evaluation. |
-| **Research** | SarabCraft R1 | SarabCraft's first in-house transfer-focused image attack with standard and multi-image modes. |
+| **Research** | SCTC (Spatially-Calibrated Token Competition) | SarabCraft's in-house, data-free targeted transfer attack tuned for the hard CNN→ViT axis, with standard and multi-image modes. |
 
 ### SarabCraft Research
 
-- **SarabCraft R1** is SarabCraft's first in-house transfer-focused image attack.
+- **SCTC (Spatially-Calibrated Token Competition)** is SarabCraft's in-house, data-free targeted transfer attack, tuned for the hard CNN→ViT transfer axis and beating the prior SOTA at equal compute.
 - **Standard mode** is built for strong single-model transfer studies.
 - **Multi-image transfer mode** unlocks broader bank-building strategies for harder evaluations.
 - **Cloud verification stays in the same workflow** through AWS Rekognition, Azure Computer Vision, and Google Cloud Vision integrations.

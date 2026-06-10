@@ -467,7 +467,7 @@ export default function BenchmarkConfig({
           />
           {domain === 'image' && selectedAttacks.includes(SARABCRAFT_R1_NAME) && (
             <p className="mt-3 text-[11px] text-slate-500">
-              Benchmark runs SarabCraft R1 in standard mode. Use Image Attack or Robustness when you want multi-image transfer tuning.
+              Benchmark runs SCTC in standard mode. Use Image Attack or Robustness when you want multi-image transfer tuning.
             </p>
           )}
         </Card>

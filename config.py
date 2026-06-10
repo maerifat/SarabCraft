@@ -762,10 +762,10 @@ ATTACK_REGISTRY = {
     },
 
     # ── Research (SarabCraft) ──────────────────────────────────────────
-    "SarabCraft R1": {
+    "SCTC (Spatially-Calibrated Token Competition)": {
         "cat": "Research", "threat": "both", "year": 2026, "norm": "L∞",
         "authors": "SarabCraft Research",
-        "desc": "SarabCraft's first in-house transfer-focused image attack. Standard mode prioritizes strong single-model transfer, while multi-image transfer mode unlocks broader bank-building strategies for harder evaluations.",
+        "desc": "SCTC (Spatially-Calibrated Token Competition) — SarabCraft's in-house, data-free targeted transfer attack tuned for the hard CNN→ViT axis. Built on a strong scale-and-shift transform pipeline, it changes the objective to compete for the target class per spatial token (calibrated), beating the prior SOTA at equal compute. Standard mode prioritizes strong single-model transfer; multi-image transfer mode unlocks broader bank-building strategies for harder evaluations.",
         "params": {
             "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
             "iterations": {"label": "Iterations", "min": 50, "max": 2000, "step": 50, "default": 300},

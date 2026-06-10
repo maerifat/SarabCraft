@@ -1,5 +1,15 @@
-SARABCRAFT_R1_NAME = "SarabCraft R1"
+SARABCRAFT_R1_NAME = "SCTC (Spatially-Calibrated Token Competition)"
+
+# Legacy display names that should resolve to the current SOTA attack so that
+# historical jobs/results saved under the old label still map correctly.
+_LEGACY_ATTACK_ALIASES = {
+    "SarabCraft R1": SARABCRAFT_R1_NAME,
+}
+
+
 def canonicalize_attack_name(name):
+    if isinstance(name, str):
+        return _LEGACY_ATTACK_ALIASES.get(name, name)
     return name
 
 
