@@ -3,13 +3,16 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import Response
 
 from backend.jobs.core import (
     append_job_event,
     create_job,
     enqueue_job,
     get_job,
+    get_job_artifact,
     list_jobs,
+    load_artifact_bytes,
     replace_job_request,
     request_job_cancel,
     resume_job,
@@ -104,6 +107,25 @@ def get_job_route(
     if not job:
         raise HTTPException(404, "Job not found")
     return job
+
+
+@router.get("/{job_id}/artifacts/{artifact_id}")
+def download_job_artifact_route(job_id: str, artifact_id: str):
+    artifact = get_job_artifact(job_id, artifact_id)
+    if not artifact:
+        raise HTTPException(404, "Artifact not found")
+    try:
+        data = load_artifact_bytes(artifact["storage_key"])
+    except Exception as exc:
+        logger.exception("Failed to load artifact %s for job %s", artifact_id, job_id)
+        raise HTTPException(500, "Failed to load artifact") from exc
+    media_type = artifact.get("mime_type") or "application/octet-stream"
+    filename = artifact.get("filename") or f"{artifact.get('role', 'artifact')}.bin"
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.post("/{job_id}/cancel")

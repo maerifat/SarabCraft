@@ -7,12 +7,13 @@ This module implements the standard SCTC transfer recipe:
   CFM + CSA + MI + TI + calibrated token-competition objective
 
 The defining objective is the calibrated per-spatial-token target competition
-term (see ``_sctc_objective.py``), added on top of the S4ST-style logit
-maximisation. This matches the experiment that produced the paper's SOTA
-numbers (``lab/.../h2h_final/run_h2h.py``): for each surrogate we apply the
-classifier head at every spatial location, calibrate the per-location logits,
-and reward the target class winning the softmax competition at every token —
-the signal a patch-based ViT picks up, which is what lifts CNN->ViT transfer.
+term (see ``_sctc_objective.py``), added on top of the S4ST-style
+margin-calibrated cross-entropy (``CE_Margin``). This matches the experiment
+that produced the paper's SOTA numbers (``lab/.../h2h_final/run_h2h.py``): for
+each surrogate we apply the classifier head at every spatial location,
+calibrate the per-location logits, and reward the target class winning the
+softmax competition at every token — the signal a patch-based ViT picks up,
+which is what lifts CNN->ViT transfer.
 
 It operates in [0,1] pixel space. The router handles model-space
 normalisation before and after the attack.
@@ -137,6 +138,20 @@ def _make_ti_kernel(kernel_size=5, nsig=3, device="cpu"):
     return torch.from_numpy(stack_kernel.astype(np.float32)).to(device)
 
 
+def _ce_margin(logits, target_labels):
+    """Margin-calibrated cross-entropy (the SCTC base objective in the paper).
+
+    Divides logits by the clean top1-top2 margin (detached) before a summed
+    cross-entropy, matching ``CE_Margin`` in ``lab/.../h2h_final`` that produced
+    the paper's SOTA numbers. Maximising this drives the target logit up while
+    normalising for per-image confidence scale.
+    """
+    value, _ = torch.sort(logits, dim=1, descending=True)
+    margin = (value[:, 0] - value[:, 1]).detach().clamp_min(1e-12)[:, None]
+    logits_cal = logits / margin
+    return -F.cross_entropy(logits_cal, target_labels, reduction="sum")
+
+
 def targeted_sarabcraft_r1(
     model,
     img_tensor,
@@ -156,11 +171,11 @@ def targeted_sarabcraft_r1(
     """
     Standard SCTC (Spatially-Calibrated Token Competition) transfer attack with optional multi-model ensemble.
 
-    The objective is ``logit-max + sctc_lam * token_competition(temp=sctc_temp)``,
+    The objective is ``CE_Margin + sctc_lam * token_competition(temp=sctc_temp)``,
     where the token-competition term is the calibrated per-spatial-token target
     competition that defines SCTC. ``sctc_lam=0`` recovers the plain S4ST-style
-    logit objective. If a surrogate does not expose a usable spatial grid +
-    classifier head, the term is skipped for that model (graceful fallback).
+    margin-calibrated objective. If a surrogate does not expose a usable spatial
+    grid + classifier head, the term is skipped for that model (graceful fallback).
     """
     iterations = int(iterations)
     kernel_size = int(kernel_size) | 1
@@ -213,7 +228,7 @@ def targeted_sarabcraft_r1(
                 active = list(range(n_models))
 
             logits = sum(cfm_wrappers[idx](x_aug) for idx in active) / len(active)
-            loss = logits.gather(1, target_t.unsqueeze(1)).sum()
+            loss = _ce_margin(logits, target_t)
 
             if use_token_term:
                 for idx in active:

@@ -47,6 +47,12 @@ class AWSRekognitionVerifier(Verifier):
                          "AWS secret key", required=True, secret=True),
             ConfigField("Region", "AWS_DEFAULT_REGION",
                          "AWS region (e.g. us-east-1)", required=False, secret=False),
+            ConfigField("Image format", "AWS_REKOGNITION_IMAGE_FORMAT",
+                         "How adversarial images are sent to Rekognition: "
+                         "'png' = lossless/pixel-perfect (best fidelity, may fail if >5MB), "
+                         "'jpeg' = compressed, "
+                         "'auto' = try PNG first and only fall back to JPEG if it exceeds AWS's 5MB limit.",
+                         required=False, secret=False),
         ]
 
     def is_available(self):
@@ -103,12 +109,69 @@ class AWSRekognitionVerifier(Verifier):
                 "message": _aws_error_message(exc, "AWS Rekognition"),
             }
 
+    _REKOGNITION_BYTE_LIMIT = 5 * 1024 * 1024 - 1024  # safety margin under 5 MiB
+
+    @classmethod
+    def _encode_png(cls, image: Image.Image) -> bytes:
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        return buf.getvalue()
+
+    @classmethod
+    def _encode_jpeg_within_limit(cls, image: Image.Image) -> bytes:
+        """JPEG-encode, lowering quality then downscaling until under the limit."""
+        rgb = image.convert("RGB")
+        for quality in (95, 90, 80, 70, 60):
+            buf = io.BytesIO()
+            rgb.save(buf, format="JPEG", quality=quality)
+            data = buf.getvalue()
+            if len(data) <= cls._REKOGNITION_BYTE_LIMIT:
+                return data
+
+        work = rgb
+        for _ in range(6):
+            w, h = work.size
+            work = work.resize((max(w // 2, 64), max(h // 2, 64)), Image.LANCZOS)
+            buf = io.BytesIO()
+            work.save(buf, format="JPEG", quality=85)
+            data = buf.getvalue()
+            if len(data) <= cls._REKOGNITION_BYTE_LIMIT:
+                return data
+        return data
+
+    @classmethod
+    def _encode_for_rekognition(cls, image: Image.Image) -> bytes:
+        """Encode an image for Rekognition honouring the configured format.
+
+        Rekognition rejects raw ``Image.Bytes`` payloads larger than 5 MB.
+        Modes (env ``AWS_REKOGNITION_IMAGE_FORMAT``):
+          - ``png``  : always lossless PNG (pixel-perfect). Raises if AWS later
+                       rejects it for size — fidelity is preserved by request.
+          - ``jpeg`` : always JPEG, shrinking to fit the 5 MB limit.
+          - ``auto`` (default): send true PNG when it fits the limit; otherwise
+                       fall back to JPEG/downscale so the call still succeeds.
+
+        Re-encoding only affects the transport copy sent to the cloud service;
+        local-model verification is unaffected and always uses the exact
+        adversarial image.
+        """
+        mode = (os.environ.get("AWS_REKOGNITION_IMAGE_FORMAT") or "auto").strip().lower()
+
+        if mode == "png":
+            return cls._encode_png(image)
+        if mode in {"jpg", "jpeg"}:
+            return cls._encode_jpeg_within_limit(image)
+
+        # auto: prefer lossless PNG, fall back only if it would exceed the limit.
+        png = cls._encode_png(image)
+        if len(png) <= cls._REKOGNITION_BYTE_LIMIT:
+            return png
+        return cls._encode_jpeg_within_limit(image)
+
     def classify(self, image: Image.Image) -> list:
         client = self._make_client()
 
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        img_bytes = buf.getvalue()
+        img_bytes = self._encode_for_rekognition(image)
 
         resp = client.detect_labels(
             Image={"Bytes": img_bytes},

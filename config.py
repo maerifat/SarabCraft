@@ -768,7 +768,7 @@ ATTACK_REGISTRY = {
         "desc": "SCTC (Spatially-Calibrated Token Competition) — SarabCraft's in-house, data-free targeted transfer attack tuned for the hard CNN→ViT axis. Built on a strong scale-and-shift transform pipeline, it changes the objective to compete for the target class per spatial token (calibrated), beating the prior SOTA at equal compute. Standard mode prioritizes strong single-model transfer; multi-image transfer mode unlocks broader bank-building strategies for harder evaluations.",
         "params": {
             "epsilon": {"label": "Epsilon (/255)", "min": 1, "max": 100, "step": 1, "default": 16},
-            "iterations": {"label": "Iterations", "min": 50, "max": 2000, "step": 50, "default": 300},
+            "iterations": {"label": "Iterations", "min": 50, "max": 2000, "step": 50, "default": 900},
             "momentum_decay": {"label": "Momentum (μ)", "min": 0, "max": 1, "step": 0.1, "default": 1.0},
             "kernel_size": {"label": "TI kernel size", "min": 3, "max": 15, "step": 2, "default": 5},
             "cfm_mix_prob": {"label": "CFM mix probability", "min": 0, "max": 0.5, "step": 0.01, "default": 0.1},

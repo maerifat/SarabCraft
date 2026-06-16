@@ -27,6 +27,53 @@ export function ImageAttackProvider({ children }) {
   const abortRef   = useRef(null)
   const jobIdRef   = useRef('')
 
+  /**
+   * Rehydrate the attack workspace from a persisted job so the user can
+   * recover transfer testing, report export, metrics and images after a
+   * page refresh or by reopening a completed job from the Jobs page.
+   */
+  const restoreFromJob = (job, { inputDataUrl = null } = {}) => {
+    const fields = job?.request?.fields || {}
+    const res = job?.result || null
+
+    if (fields.attack) setAttack(fields.attack)
+    if (fields.model) setModel(fields.model)
+
+    const RESERVED = new Set(['attack', 'model', 'ensemble_mode', 'ensemble_models', 'ensemble_model_snapshots_json'])
+    const restoredParams = {}
+    Object.entries(fields).forEach(([key, value]) => {
+      if (RESERVED.has(key)) return
+      const num = typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value)) ? Number(value) : value
+      if (value === 'true') restoredParams[key] = true
+      else if (value === 'false') restoredParams[key] = false
+      else restoredParams[key] = num
+    })
+    setParamValues(restoredParams)
+
+    if (fields.ensemble_mode) setEnsembleMode(fields.ensemble_mode)
+    if (fields.ensemble_models) {
+      const list = String(fields.ensemble_models).split(',').map(s => s.trim()).filter(Boolean)
+      setEnsembleModels(list)
+    } else {
+      setEnsembleModels([])
+    }
+
+    setResult(res)
+    setCurrentJobId(job?.job_id || '')
+    setLoading(false)
+    setError('')
+
+    if (inputDataUrl) {
+      setInputPreview(inputDataUrl)
+      setInputFile(null)
+    } else {
+      setInputPreview(null)
+      setInputFile(null)
+    }
+    setTargetPreview(null)
+    setTargetFile(null)
+  }
+
   return (
     <ImageAttackContext.Provider value={{
       result, setResult,
@@ -44,6 +91,7 @@ export function ImageAttackProvider({ children }) {
       currentJobId, setCurrentJobId,
       abortRef,
       jobIdRef,
+      restoreFromJob,
     }}>
       {children}
     </ImageAttackContext.Provider>

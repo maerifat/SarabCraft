@@ -16,8 +16,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Python deps (heaviest layer — cached unless requirements change)
+# Install CPU-only torch first from the dedicated CPU index — avoids pulling
+# the multi-GB CUDA wheels (no NVIDIA GPU here), so the build is far faster
+# and far less likely to time out on slow connections.
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt && \
+RUN pip install --no-cache-dir --timeout 300 --retries 10 \
+        --index-url https://download.pytorch.org/whl/cpu \
+        torch torchvision torchaudio && \
+    pip install --no-cache-dir --timeout 300 --retries 10 -r requirements.txt && \
     python -m nltk.downloader -d /usr/local/nltk_data wordnet omw-1.4
 
 # Shared library modules (at /app/ so sys.path hacks resolve correctly)

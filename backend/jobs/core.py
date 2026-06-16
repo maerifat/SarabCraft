@@ -343,6 +343,13 @@ def list_job_artifacts(job_id: str) -> list[dict]:
     )
 
 
+def get_job_artifact(job_id: str, artifact_id: str) -> Optional[dict]:
+    return fetch_one(
+        "SELECT * FROM job_artifacts WHERE id = %s AND job_id = %s",
+        (artifact_id, job_id),
+    )
+
+
 def create_job(
     *,
     kind: str,

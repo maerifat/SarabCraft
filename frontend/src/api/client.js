@@ -275,6 +275,18 @@ export const getJobDetails = (jobId, { afterEventId = 0, signal } = {}) => getJo
 export const cancelJobById = jobId => cancelJob(jobId)
 export const resumeJobById = jobId => resumeJob(jobId)
 
+export async function getJobArtifactDataUrl(jobId, artifactId, { signal } = {}) {
+  const res = await fetch(`${API_BASE}/jobs/${jobId}/artifacts/${artifactId}`, { signal })
+  if (!res.ok) throw new Error(`Failed to load artifact (${res.status})`)
+  const blob = await res.blob()
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error || new Error('Failed to read artifact'))
+    reader.readAsDataURL(blob)
+  })
+}
+
 // Explainability
 export const runGradCAM = body => post('/explainability/gradcam', body);
 export const compareGradCAM = body => post('/explainability/gradcam/compare', body);

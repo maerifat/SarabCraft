@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { cancelJobById, getJobDetails, getJobs, resumeJobById } from '../api/client'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { cancelJobById, getJobArtifactDataUrl, getJobDetails, getJobs, resumeJobById } from '../api/client'
 import { Card, ErrorMsg, SectionLabel, Select } from './ui/Section'
 import { useConfirm } from './ui/ConfirmDialog'
 import { useToast } from './ui/Toast'
+import { useImageAttack } from './ImageAttackContext'
 
 const STATUS_OPTIONS = ['All statuses', 'queued', 'running', 'completed', 'failed', 'cancelled']
 
@@ -31,6 +32,10 @@ function canCancel(job) {
 
 function canResume(job) {
   return Boolean(job?.resume_supported && ['failed', 'cancelled'].includes(job?.status))
+}
+
+function canOpenInAttack(job) {
+  return job?.kind === 'image_attack' && job?.status === 'completed' && Boolean(job?.result?.adversarial_b64)
 }
 
 function sanitizeForDisplay(value, key = '') {
@@ -102,6 +107,8 @@ export default function JobsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { confirm } = useConfirm()
   const { toast } = useToast()
+  const navigate = useNavigate()
+  const { restoreFromJob } = useImageAttack()
 
   const selectedJobId = searchParams.get('job') || ''
   const statusValue = statusFilter === 'All statuses' ? '' : statusFilter
@@ -206,6 +213,31 @@ export default function JobsPage() {
     }
   }
 
+  const handleOpenInAttack = async (job) => {
+    setBusyJobId(job.job_id)
+    try {
+      const detail = await getJobDetails(job.job_id)
+      let inputDataUrl = null
+      const inputArtifact = (detail.artifacts || []).find(
+        (a) => a.role === 'input-input_file' || a.metadata_json?.field === 'input_file'
+      )
+      if (inputArtifact) {
+        try {
+          inputDataUrl = await getJobArtifactDataUrl(job.job_id, inputArtifact.id)
+        } catch {
+          inputDataUrl = null
+        }
+      }
+      restoreFromJob(detail, { inputDataUrl })
+      toast({ type: 'success', message: 'Loaded job into Image Attack. Transfer & report are ready.' })
+      navigate('/image-attack')
+    } catch (err) {
+      setError(err.message || 'Failed to open job in attack')
+    } finally {
+      setBusyJobId('')
+    }
+  }
+
   const detailSummary = summaryLines(selectedJob)
   const sanitizedRequest = selectedJob ? JSON.stringify(sanitizeForDisplay(selectedJob.request), null, 2) : ''
   const sanitizedResult = selectedJob?.result ? JSON.stringify(sanitizeForDisplay(selectedJob.result), null, 2) : ''
@@ -277,6 +309,15 @@ export default function JobsPage() {
                         </div>
                       </button>
                       <div className="flex items-center gap-2 shrink-0">
+                        {canOpenInAttack(job) && (
+                          <button
+                            onClick={() => handleOpenInAttack(job)}
+                            disabled={busy}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${busy ? 'opacity-50' : 'hover:bg-[var(--accent)]/25'} bg-[var(--accent)]/15 border-[var(--accent)]/30 text-[var(--accent)] transition`}
+                          >
+                            Open in Attack
+                          </button>
+                        )}
                         {canCancel(job) && (
                           <button
                             onClick={() => handleCancel(job)}
@@ -319,6 +360,15 @@ export default function JobsPage() {
                   <p className="text-[11px] text-slate-500 mt-1">{selectedJob.kind} · {selectedJob.domain} · {selectedJob.job_id}</p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {canOpenInAttack(selectedJob) && (
+                    <button
+                      onClick={() => handleOpenInAttack(selectedJob)}
+                      disabled={busyJobId === selectedJob.job_id}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30 hover:bg-[var(--accent)]/25 disabled:opacity-40 transition"
+                    >
+                      Open in Attack
+                    </button>
+                  )}
                   {canCancel(selectedJob) && (
                     <button
                       onClick={() => handleCancel(selectedJob)}

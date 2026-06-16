@@ -5,6 +5,7 @@ Automatically discovers all Verifier subclasses and provides
 a single run_verification() entry point for the UI.
 """
 
+import logging
 import time
 from typing import Optional
 from PIL import Image
@@ -18,13 +19,44 @@ from backend.models.registry import (
 from verification.base import Verifier, Prediction, VerificationResult
 
 
+_logger = logging.getLogger(__name__)
+
 _REGISTRY: list = []
 _ALL_LOADED = False
 
 
 def _public_error_message(exc: Exception, fallback: str) -> str:
+    """Map an exception to a safe, user-facing message.
+
+    The full exception is logged separately by the caller; here we only decide
+    what is safe to surface in the UI. We translate common cloud-SDK failures
+    into actionable hints (expired creds, missing permissions, etc.) without
+    leaking stack traces, endpoints, or secrets.
+    """
     if isinstance(exc, RuntimeError):
         return str(exc)
+
+    # botocore / AWS errors carry a structured ``response`` with an error code.
+    code = ""
+    response = getattr(exc, "response", None)
+    if isinstance(response, dict):
+        code = str(((response.get("Error") or {}).get("Code") or "")).strip()
+    exc_name = type(exc).__name__
+
+    if exc_name == "NoCredentialsError" or code in {
+        "InvalidClientTokenId",
+        "UnrecognizedClientException",
+        "AuthFailure",
+    }:
+        return "Cloud credentials are missing or invalid — re-add them under Settings."
+    if exc_name in {"ExpiredTokenException"} or code in {"ExpiredToken", "ExpiredTokenException"}:
+        return "Cloud session token has expired — refresh your credentials under Settings."
+    if code in {"AccessDeniedException", "AccessDenied"}:
+        return "Cloud credentials lack permission for this service."
+    if exc_name in {"EndpointConnectionError", "ConnectTimeoutError", "ReadTimeoutError"}:
+        return "Could not reach the cloud service (network/endpoint error)."
+    if code:
+        return f"Cloud verification failed ({code})."
     return fallback
 
 
@@ -220,6 +252,10 @@ def run_verification(
             )
             results.append(r)
         except Exception as e:
+            _logger.exception(
+                "Verification failed for service=%r target=%r: %s",
+                display_name, target_label, e,
+            )
             results.append(VerificationResult(
                 verifier_name=display_name,
                 service_type=verifier.service_type,

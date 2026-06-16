@@ -12,6 +12,20 @@ import torch.nn.functional as F
 from config import device
 
 
+def _ce_margin_min(logits, target):
+    """Margin-calibrated cross-entropy to MINIMISE toward the target.
+
+    Matches ``CE_Margin`` from the paper's ``run_h2h.py`` (logits divided by the
+    detached clean top1-top2 margin) but returns the positive summed CE so the
+    existing gradient-descent step (``adv = adv - alpha * sign``) drives the
+    target class up — equivalent to maximising ``-CE_Margin``.
+    """
+    value, _ = torch.sort(logits, dim=1, descending=True)
+    margin = (value[:, 0] - value[:, 1]).detach().clamp_min(1e-12)[:, None]
+    logits_cal = logits / margin
+    return F.cross_entropy(logits_cal, target, reduction="sum")
+
+
 def _scale_transform(x, scale_range=(0.5, 1.5)):
     """Random consistent scaling per image."""
     s = scale_range[0] + torch.rand(1).item() * (scale_range[1] - scale_range[0])
@@ -71,7 +85,7 @@ def targeted_s4st(model, img_tensor, target_class, epsilon, iterations,
         for _ in range(n_aug):
             x_aug = _s4st_augment(adv.detach(), (scale_lo, scale_hi))
             x_aug = x_aug.requires_grad_(True)
-            loss = F.cross_entropy(model(x_aug).logits, target)
+            loss = _ce_margin_min(model(x_aug).logits, target)
             model.zero_grad()
             loss.backward()
             g_sum = g_sum + x_aug.grad.detach()

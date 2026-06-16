@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { runImageAttack, getModels, getAttacks, createAbortable, cancelJobById } from '../api/client'
+import { runImageAttack, getModels, getAttacks, createAbortable, cancelJobById, getJobDetails, getJobArtifactDataUrl } from '../api/client'
 import TransferModal from './TransferModal'
 import MetricsPanel from './MetricsPanel'
 import GradCAMPanel from './GradCAMPanel'
@@ -46,6 +46,7 @@ export default function ImageAttackTab() {
     currentJobId, setCurrentJobId,
     abortRef,
     jobIdRef,
+    restoreFromJob,
   } = useImageAttack()
 
   /* ── Ephemeral local state (OK to reset on remount) ───────────── */
@@ -66,6 +67,46 @@ export default function ImageAttackTab() {
         setRegistry(FALLBACK_REGISTRY)
       }
     }).catch(() => setRegistry(FALLBACK_REGISTRY))
+  }, [])
+
+  const LAST_JOB_KEY = 'sarabcraft.imageAttack.lastJobId'
+
+  // Remember the most recent completed attack so a hard refresh can recover it.
+  useEffect(() => {
+    if (result && currentJobId) {
+      try { window.localStorage.setItem(LAST_JOB_KEY, currentJobId) } catch { /* ignore */ }
+    }
+  }, [result, currentJobId])
+
+  // On mount: if there's no in-memory result but we have a saved job, rehydrate it.
+  useEffect(() => {
+    if (result || loading) return
+    let savedJobId = ''
+    try { savedJobId = window.localStorage.getItem(LAST_JOB_KEY) || '' } catch { savedJobId = '' }
+    if (!savedJobId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const detail = await getJobDetails(savedJobId)
+        if (cancelled) return
+        if (detail?.status !== 'completed' || !detail?.result?.adversarial_b64) {
+          try { window.localStorage.removeItem(LAST_JOB_KEY) } catch { /* ignore */ }
+          return
+        }
+        let inputDataUrl = null
+        const inputArtifact = (detail.artifacts || []).find(
+          (artifact) => artifact.role === 'input-input_file' || artifact.metadata_json?.field === 'input_file'
+        )
+        if (inputArtifact) {
+          try { inputDataUrl = await getJobArtifactDataUrl(savedJobId, inputArtifact.id) } catch { inputDataUrl = null }
+        }
+        if (!cancelled) restoreFromJob(detail, { inputDataUrl })
+      } catch {
+        /* job no longer available — leave the form blank */
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const attackMeta = registry[attack] || {}
@@ -108,6 +149,7 @@ export default function ImageAttackTab() {
     setError('')
     setResult(null)
     setCurrentJobId('')
+    try { window.localStorage.removeItem('sarabcraft.imageAttack.lastJobId') } catch { /* ignore */ }
     try {
       const fd = new FormData()
       fd.append('input_file', inputFile); fd.append('target_file', targetFile)
