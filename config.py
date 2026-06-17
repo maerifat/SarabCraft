@@ -7,6 +7,19 @@ import os
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
 
+# --- HuggingFace download hardening -----------------------------------------
+# The Xet transfer backend (`hf_xet`) can hang indefinitely on some networks
+# (observed: a model load parked in `xet_get` for >90s while holding the load
+# lock, starving every other request). We disable Xet and fall back to plain
+# HTTPS downloads, which honour the timeout/retry settings below. These can be
+# overridden from the environment if a deployment knows Xet works for it.
+os.environ.setdefault('HF_HUB_DISABLE_XET', '1')
+# Per-chunk download timeout (seconds) so a stalled connection fails fast and
+# retries instead of hanging forever.
+os.environ.setdefault('HF_HUB_DOWNLOAD_TIMEOUT', '30')
+# Bound the number of automatic retries on transient network errors.
+os.environ.setdefault('HF_HUB_ETAG_TIMEOUT', '10')
+
 import torch
 torch.set_num_threads(1)
 torch.set_num_interop_threads(1)

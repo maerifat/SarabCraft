@@ -56,30 +56,35 @@ async def generate_tts(req: TTSRequest):
     try:
         import edge_tts
         import soundfile as sf
+        from starlette.concurrency import run_in_threadpool
 
         communicate = edge_tts.Communicate(req.text.strip(), req.voice)
         await communicate.save(mp3_path)
 
-        try:
-            data, sr = sf.read(mp3_path, dtype="float32")
-        except Exception:
-            ffmpeg = shutil.which("ffmpeg")
-            if not ffmpeg:
-                raise HTTPException(500, "ffmpeg not found and soundfile cannot read mp3")
-            subprocess.run(
-                [ffmpeg, "-y", "-i", mp3_path, "-ar", "16000", "-ac", "1", wav_path],
-                capture_output=True, timeout=30,
-            )
-            data, sr = sf.read(wav_path, dtype="float32")
+        def _transcode():
+            try:
+                data, sr = sf.read(mp3_path, dtype="float32")
+            except Exception:
+                ffmpeg = shutil.which("ffmpeg")
+                if not ffmpeg:
+                    raise HTTPException(500, "ffmpeg not found and soundfile cannot read mp3")
+                subprocess.run(
+                    [ffmpeg, "-y", "-i", mp3_path, "-ar", "16000", "-ac", "1", wav_path],
+                    capture_output=True, timeout=30,
+                )
+                data, sr = sf.read(wav_path, dtype="float32")
 
-        if data.ndim > 1:
-            data = data.mean(axis=1)
+            if data.ndim > 1:
+                data = data.mean(axis=1)
 
-        import base64
-        import io
-        out_buf = io.BytesIO()
-        sf.write(out_buf, data, int(sr), format="WAV")
-        return {"wav_b64": base64.b64encode(out_buf.getvalue()).decode(), "sample_rate": int(sr)}
+            import base64
+            import io
+            out_buf = io.BytesIO()
+            sf.write(out_buf, data, int(sr), format="WAV")
+            return {"wav_b64": base64.b64encode(out_buf.getvalue()).decode(), "sample_rate": int(sr)}
+
+        # Transcoding/ffmpeg is blocking — run it off the event loop.
+        return await run_in_threadpool(_transcode)
     except HTTPException:
         raise
     except Exception as e:

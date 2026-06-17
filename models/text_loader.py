@@ -6,12 +6,18 @@ caches them, and provides a get_predictions() helper.
 """
 
 import logging
+import threading
+from collections import defaultdict
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 logger = logging.getLogger("textattack.models")
 
 _model_cache: dict[str, tuple] = {}
+_cache_lock = threading.Lock()
+# Per-model load locks so a slow download doesn't block other models. See
+# models/loader.py for the full rationale.
+_model_locks: "dict[str, threading.Lock]" = defaultdict(threading.Lock)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -19,20 +25,30 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def load_text_model(model_name: str, progress=None):
     """Load a HuggingFace text classification model + tokenizer.
 
-    Returns (model, tokenizer). Cached after first load.
+    Returns (model, tokenizer). Cached after first load. Thread-safe with a
+    per-model lock so a slow download never blocks loading a different model.
     """
-    if model_name in _model_cache:
+    cached = _model_cache.get(model_name)
+    if cached is not None:
         logger.debug("Cache hit: %s", model_name)
-        return _model_cache[model_name]
+        return cached
 
-    logger.info("Loading text model: %s", model_name)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForSequenceClassification.from_pretrained(model_name)
-    model.to(device)
-    model.eval()
+    with _cache_lock:
+        model_lock = _model_locks[model_name]
 
-    _model_cache[model_name] = (model, tokenizer)
-    return model, tokenizer
+    with model_lock:
+        cached = _model_cache.get(model_name)
+        if cached is not None:
+            return cached
+
+        logger.info("Loading text model: %s", model_name)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        model.to(device)
+        model.eval()
+
+        _model_cache[model_name] = (model, tokenizer)
+        return model, tokenizer
 
 
 def get_predictions(model, tokenizer, text: str, top_k: int = 5) -> list[dict]:

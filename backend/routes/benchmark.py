@@ -42,6 +42,7 @@ from backend.models.registry import (
     snapshot_display_name,
     snapshot_entry,
 )
+from backend.runtime.inference import iterate_in_threadpool
 
 logger = logging.getLogger("mlsec.benchmark")
 
@@ -508,17 +509,18 @@ async def run_benchmark(
             })
             results = []
             try:
-                for row in _run_image_benchmark(
+                row_iter = iterate_in_threadpool(
+                    _run_image_benchmark,
                     input_img, target_img, source_model, combos,
                     transfer_targets, preprocess_mode, cancel_event=cancel,
-                ):
+                )
+                async for row in row_iter:
                     if await request.is_disconnected():
                         logger.info("Client disconnected, cancelling benchmark")
                         cancel.set()
                         return
                     results.append(row)
                     yield _sse("result", row)
-                    await asyncio.sleep(0)
             except Exception as e:
                 logger.exception("Error during image benchmark stream")
                 yield _sse("error", {"message": str(e)})
@@ -553,17 +555,18 @@ async def run_benchmark(
             })
             results = []
             try:
-                for row in _run_audio_benchmark(
+                row_iter = iterate_in_threadpool(
+                    _run_audio_benchmark,
                     input_data, source_model, target_text, combos,
                     transfer_targets, cancel_event=cancel,
-                ):
+                )
+                async for row in row_iter:
                     if await request.is_disconnected():
                         logger.info("Client disconnected, cancelling audio benchmark")
                         cancel.set()
                         return
                     results.append(row)
                     yield _sse("result", row)
-                    await asyncio.sleep(0)
             except Exception as e:
                 logger.exception("Error during audio benchmark stream")
                 yield _sse("error", {"message": str(e)})

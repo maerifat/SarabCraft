@@ -117,12 +117,34 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 @app.on_event("startup")
-def startup_runtime():
+async def startup_runtime():
     try:
         initialize_runtime()
         initialize_model_registry()
     except Exception:
         logger.exception("Failed to initialize persistence runtime during startup")
+    _configure_threadpool()
+
+
+def _configure_threadpool():
+    """Enlarge the anyio threadpool that Starlette uses to offload sync work.
+
+    Every blocking handler (sync ``def`` routes, plus ``run_in_threadpool`` /
+    ``run_inference`` offloads) borrows a thread from this pool. Heavy GPU work
+    is serialized behind a single global lock, so the threads queued behind it
+    are parked (not burning CPU); a generous pool simply guarantees that quick
+    I/O-bound endpoints and health checks always have a free thread even while
+    several long attacks are queued. Override with SARAB_THREADPOOL_SIZE.
+    """
+    try:
+        import anyio.to_thread
+
+        size = int(os.environ.get("SARAB_THREADPOOL_SIZE", "64"))
+        limiter = anyio.to_thread.current_default_thread_limiter()
+        limiter.total_tokens = size
+        logger.info("Threadpool capacity set to %d", size)
+    except Exception:
+        logger.exception("Could not configure threadpool size")
 
 app.include_router(attacks.router, prefix="/api/attacks", tags=["Image Attacks"])
 app.include_router(audio_attacks.router, prefix="/api/attacks", tags=["Audio Attacks"])

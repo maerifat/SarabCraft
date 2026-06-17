@@ -22,6 +22,7 @@ export function ImageAttackProvider({ children }) {
   const [loading, setLoading]           = useState(false)
   const [error, setError]               = useState('')
   const [currentJobId, setCurrentJobId] = useState('')
+  const [progress, setProgress]         = useState(null)
 
   /* refs that ImageAttackTab also needs across mounts */
   const abortRef   = useRef(null)
@@ -30,9 +31,12 @@ export function ImageAttackProvider({ children }) {
   /**
    * Rehydrate the attack workspace from a persisted job so the user can
    * recover transfer testing, report export, metrics and images after a
-   * page refresh or by reopening a completed job from the Jobs page.
+   * page refresh or by reopening a job (running OR completed) from the Jobs
+   * page. Restores model/attack/params/ensemble plus BOTH the input and
+   * target images. For an in-flight job, pass { live: true } so the caller
+   * can re-attach to live progress polling.
    */
-  const restoreFromJob = (job, { inputDataUrl = null } = {}) => {
+  const restoreFromJob = (job, { inputDataUrl = null, targetDataUrl = null, live = false } = {}) => {
     const fields = job?.request?.fields || {}
     const res = job?.result || null
 
@@ -60,7 +64,10 @@ export function ImageAttackProvider({ children }) {
 
     setResult(res)
     setCurrentJobId(job?.job_id || '')
-    setLoading(false)
+    // For a still-running job we want the UI in its "running" state with live
+    // progress; for a finished/restored job we clear loading.
+    setLoading(Boolean(live))
+    setProgress(live ? (job?.progress || null) : null)
     setError('')
 
     if (inputDataUrl) {
@@ -70,8 +77,13 @@ export function ImageAttackProvider({ children }) {
       setInputPreview(null)
       setInputFile(null)
     }
-    setTargetPreview(null)
-    setTargetFile(null)
+    if (targetDataUrl) {
+      setTargetPreview(targetDataUrl)
+      setTargetFile(null)
+    } else {
+      setTargetPreview(null)
+      setTargetFile(null)
+    }
   }
 
   return (
@@ -89,6 +101,7 @@ export function ImageAttackProvider({ children }) {
       loading, setLoading,
       error, setError,
       currentJobId, setCurrentJobId,
+      progress, setProgress,
       abortRef,
       jobIdRef,
       restoreFromJob,

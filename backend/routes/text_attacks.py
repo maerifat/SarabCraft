@@ -17,6 +17,7 @@ if ROOT not in sys.path:
 from attacks.text.config import TEXT_ATTACK_REGISTRY, AVAILABLE_TEXT_MODELS, DEFAULT_TEXT_MODEL
 from models.text_loader import load_text_model, get_predictions
 from attacks.text.result_builder import run_and_build_result
+from backend.runtime.inference import inference_lock
 
 router = APIRouter()
 
@@ -65,11 +66,12 @@ def classify_text(
 ):
     """Classify text using a text classification model."""
     try:
-        m, tok = load_text_model(model)
+        with inference_lock():
+            m, tok = load_text_model(model)
+            preds = get_predictions(m, tok, text, top_k=top_k)
     except Exception as e:
-        raise HTTPException(500, f"Failed to load model: {e}")
+        raise HTTPException(500, f"Failed to classify: {e}")
 
-    preds = get_predictions(m, tok, text, top_k=top_k)
     return {"predictions": preds, "model": model}
 
 
@@ -96,19 +98,16 @@ def run_text_attack_endpoint(
         raise HTTPException(400, "Invalid params JSON")
 
     try:
-        m, tok = load_text_model(model)
-    except Exception as e:
-        raise HTTPException(500, f"Failed to load model: {e}")
-
-    try:
-        result = run_and_build_result(
-            attack_name=attack,
-            model=m,
-            tokenizer=tok,
-            text=text,
-            target_label=target_label if target_label else None,
-            params=attack_params,
-        )
+        with inference_lock():
+            m, tok = load_text_model(model)
+            result = run_and_build_result(
+                attack_name=attack,
+                model=m,
+                tokenizer=tok,
+                text=text,
+                target_label=target_label if target_label else None,
+                params=attack_params,
+            )
         return {"result": asdict(result)}
     except Exception as e:
         raise HTTPException(500, f"Attack failed: {e}")

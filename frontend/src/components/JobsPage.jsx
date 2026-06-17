@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { cancelJobById, getJobArtifactDataUrl, getJobDetails, getJobs, resumeJobById } from '../api/client'
+import { cancelJobById, getJobDetails, getJobs, resumeJobById } from '../api/client'
 import { Card, ErrorMsg, SectionLabel, Select } from './ui/Section'
 import { useConfirm } from './ui/ConfirmDialog'
 import { useToast } from './ui/Toast'
-import { useImageAttack } from './ImageAttackContext'
 
 const STATUS_OPTIONS = ['All statuses', 'queued', 'running', 'completed', 'failed', 'cancelled']
 
@@ -35,7 +34,11 @@ function canResume(job) {
 }
 
 function canOpenInAttack(job) {
-  return job?.kind === 'image_attack' && job?.status === 'completed' && Boolean(job?.result?.adversarial_b64)
+  if (job?.kind !== 'image_attack') return false
+  // Running/queued jobs can be re-attached with live progress; completed jobs
+  // restore their full result.
+  if (['queued', 'running'].includes(job?.status)) return true
+  return job?.status === 'completed' && Boolean(job?.result?.adversarial_b64)
 }
 
 function sanitizeForDisplay(value, key = '') {
@@ -108,7 +111,6 @@ export default function JobsPage() {
   const { confirm } = useConfirm()
   const { toast } = useToast()
   const navigate = useNavigate()
-  const { restoreFromJob } = useImageAttack()
 
   const selectedJobId = searchParams.get('job') || ''
   const statusValue = statusFilter === 'All statuses' ? '' : statusFilter
@@ -213,29 +215,17 @@ export default function JobsPage() {
     }
   }
 
-  const handleOpenInAttack = async (job) => {
-    setBusyJobId(job.job_id)
-    try {
-      const detail = await getJobDetails(job.job_id)
-      let inputDataUrl = null
-      const inputArtifact = (detail.artifacts || []).find(
-        (a) => a.role === 'input-input_file' || a.metadata_json?.field === 'input_file'
-      )
-      if (inputArtifact) {
-        try {
-          inputDataUrl = await getJobArtifactDataUrl(job.job_id, inputArtifact.id)
-        } catch {
-          inputDataUrl = null
-        }
-      }
-      restoreFromJob(detail, { inputDataUrl })
-      toast({ type: 'success', message: 'Loaded job into Image Attack. Transfer & report are ready.' })
-      navigate('/image-attack')
-    } catch (err) {
-      setError(err.message || 'Failed to open job in attack')
-    } finally {
-      setBusyJobId('')
-    }
+  const handleOpenInAttack = (job) => {
+    // Defer the actual restore (form + input/target images + live progress
+    // re-attach) to the Image Attack page via a deep link — it handles both
+    // running and completed jobs uniformly.
+    navigate(`/image-attack?job=${encodeURIComponent(job.job_id)}`)
+    toast({
+      type: 'success',
+      message: ['queued', 'running'].includes(job.status)
+        ? 'Reconnecting to the running attack...'
+        : 'Loaded job into Image Attack. Transfer & report are ready.',
+    })
   }
 
   const detailSummary = summaryLines(selectedJob)
@@ -315,7 +305,7 @@ export default function JobsPage() {
                             disabled={busy}
                             className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${busy ? 'opacity-50' : 'hover:bg-[var(--accent)]/25'} bg-[var(--accent)]/15 border-[var(--accent)]/30 text-[var(--accent)] transition`}
                           >
-                            Open in Attack
+                            {['queued', 'running'].includes(job.status) ? 'Reconnect' : 'Open in Attack'}
                           </button>
                         )}
                         {canCancel(job) && (
@@ -366,7 +356,7 @@ export default function JobsPage() {
                       disabled={busyJobId === selectedJob.job_id}
                       className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30 hover:bg-[var(--accent)]/25 disabled:opacity-40 transition"
                     >
-                      Open in Attack
+                      {['queued', 'running'].includes(selectedJob.status) ? 'Reconnect' : 'Open in Attack'}
                     </button>
                   )}
                   {canCancel(selectedJob) && (

@@ -2,6 +2,9 @@ name: sarabcraft
 
 x-sarabcraft-env: &sarabcraft-env
   HF_HUB_DISABLE_TELEMETRY: "1"
+  HF_HUB_DISABLE_XET: "1"
+  HF_HUB_DOWNLOAD_TIMEOUT: "30"
+  HF_HUB_ETAG_TIMEOUT: "10"
   POSTGRES_HOST: sarabcraft-postgres
   POSTGRES_PORT: "5432"
   POSTGRES_DB: ${POSTGRES_DB:-sarabcraft}

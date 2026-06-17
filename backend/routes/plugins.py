@@ -64,10 +64,13 @@ async def upload_plugin(file: UploadFile = File(...)):
     content = await file.read()
     filename = file.filename or "plugin.py"
 
+    from starlette.concurrency import run_in_threadpool
+
     if filename.endswith(".zip"):
-        result = upload_plugin_zip(content)
+        # Unzipping + plugin validation (which may import code) is blocking.
+        result = await run_in_threadpool(upload_plugin_zip, content)
     elif filename.endswith(".py"):
-        result = upload_plugin_file(filename, content)
+        result = await run_in_threadpool(upload_plugin_file, filename, content)
     else:
         raise HTTPException(400, "Only .py and .zip files are accepted")
 

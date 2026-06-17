@@ -31,6 +31,7 @@ from utils.metrics import compute_metrics
 from utils.attack_names import SARABCRAFT_R1_NAME
 from attacks.image.router import run_attack_method
 from backend.routes.history import save_entry
+from backend.runtime.inference import run_inference, inference_lock
 
 router = APIRouter()
 
@@ -134,11 +135,22 @@ async def classify_image(image_file: UploadFile = File(...), model: str = Form("
     img = _parse_image(data)
     model_entry = _resolve_model_entry(model)
     model_name = str(model_entry["model_ref"])
-    try:
+
+    def _classify():
+        # Loading (download/instantiate) happens OUTSIDE the global GPU lock so a
+        # slow first-time download never blocks other users' inference. Only the
+        # actual forward pass is serialized on the shared device.
         mdl, _ = load_model(model_name, progress=None)
         tensor = preprocess_image(img, model_name)
-        preds, top_class, _ = get_predictions(mdl, tensor)
+        with inference_lock():
+            preds, top_class, _ = get_predictions(mdl, tensor)
         return {"class": top_class, "confidence": preds.get(top_class, 0) * 100, "predictions": preds}
+
+    try:
+        # Heavy work runs off the event loop (serialize=False here because the
+        # GPU-bound section takes the inference lock itself), so the event loop
+        # and other inference requests stay responsive while a model downloads.
+        return await run_inference(_classify, serialize=False)
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -237,12 +249,11 @@ async def run_image_attack(
     model_name = str(model_entry["model_ref"])
     model_snapshot = snapshot_entry(model_entry)
 
-    try:
+    def _run() -> dict:
+        # --- Load phase (no global GPU lock): network/disk I/O only. ---------
         mdl, _ = load_model(model_name, progress=None)
         input_tensor = preprocess_image(input_img, model_name)
         target_tensor = preprocess_image(target_img, model_name)
-        orig_preds, orig_class, _ = get_predictions(mdl, input_tensor)
-        _, target_class, target_idx = get_predictions(mdl, target_tensor)
 
         attack_params = _build_attack_params(
             alpha=alpha, momentum_decay=momentum_decay, random_start=random_start,
@@ -290,11 +301,15 @@ async def run_image_attack(
             ensemble_model_snapshots=[snapshot_entry(item) for item in ensemble_entries],
         )
 
-        adv_tensor = run_attack_method(
-            attack, mdl, input_tensor, target_idx, epsilon / 255.0, iterations,
-            attack_params, ensemble_models=ens_mdls if ens_mdls else None,
-        )
-        adv_preds, adv_class, _ = get_predictions(mdl, adv_tensor)
+        # --- Compute phase (serialized on the shared GPU). -------------------
+        with inference_lock():
+            orig_preds, orig_class, _ = get_predictions(mdl, input_tensor)
+            _, target_class, target_idx = get_predictions(mdl, target_tensor)
+            adv_tensor = run_attack_method(
+                attack, mdl, input_tensor, target_idx, epsilon / 255.0, iterations,
+                attack_params, ensemble_models=ens_mdls if ens_mdls else None,
+            )
+            adv_preds, adv_class, _ = get_predictions(mdl, adv_tensor)
 
         success = adv_class == target_class
         metrics = compute_metrics(input_tensor, adv_tensor)
@@ -337,5 +352,11 @@ async def run_image_attack(
             logging.getLogger(__name__).warning("Failed to save history entry: %s", exc)
 
         return result
+
+    try:
+        # The full attack offloads to the threadpool. Loading runs lock-free;
+        # only the compute section serializes on the GPU lock (taken inside
+        # ``_run``), so a model download never blocks other inference.
+        return await run_inference(_run, serialize=False)
     except Exception as e:
         raise HTTPException(500, f"Attack failed: {str(e)}")

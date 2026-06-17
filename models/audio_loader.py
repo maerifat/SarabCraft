@@ -10,6 +10,7 @@ forward pass so gradients flow back to the waveform.
 import torch
 import torch.nn as nn
 import torchaudio
+import threading
 from transformers import (
     AutoFeatureExtractor,
     AutoModelForAudioClassification,
@@ -20,6 +21,11 @@ from config import device
 
 
 audio_model_cache = {}
+_audio_cache_lock = threading.Lock()
+# Per-model load locks: a slow download of one audio model must not block
+# loading (or a cache hit on) a different one. See models/loader.py for rationale.
+from collections import defaultdict as _defaultdict
+_audio_model_locks: "dict[str, threading.Lock]" = _defaultdict(threading.Lock)
 
 
 class AudioModelWrapper(nn.Module):
@@ -133,28 +139,36 @@ def load_audio_model(model_name, progress=None):
         update_progress(1.0, f"✅ {model_name} (cached)")
         return audio_model_cache[model_name]
 
-    update_progress(0.1, f"⬇️ Downloading {model_name}...")
-    print(f"Loading audio model: {model_name}...", flush=True)
+    with _audio_cache_lock:
+        model_lock = _audio_model_locks[model_name]
 
-    update_progress(0.2, "📦 Loading feature extractor...")
-    feature_extractor = AutoFeatureExtractor.from_pretrained(model_name)
+    with model_lock:
+        if model_name in audio_model_cache:
+            update_progress(1.0, f"✅ {model_name} (cached)")
+            return audio_model_cache[model_name]
 
-    update_progress(0.5, "📦 Loading model weights...")
-    model = AutoModelForAudioClassification.from_pretrained(model_name)
+        update_progress(0.1, f"⬇️ Downloading {model_name}...")
+        print(f"Loading audio model: {model_name}...", flush=True)
 
-    update_progress(0.8, f"🔧 Moving to {device}...")
-    model = model.to(device)
-    model.eval()
+        update_progress(0.2, "📦 Loading feature extractor...")
+        feature_extractor = AutoFeatureExtractor.from_pretrained(model_name)
 
-    sr = getattr(feature_extractor, "sampling_rate", 16000)
+        update_progress(0.5, "📦 Loading model weights...")
+        model = AutoModelForAudioClassification.from_pretrained(model_name)
 
-    wrapper = AudioModelWrapper(model, feature_extractor, model_name, sr)
-    wrapper = wrapper.to(device)
-    wrapper.eval()
+        update_progress(0.8, f"🔧 Moving to {device}...")
+        model = model.to(device)
+        model.eval()
 
-    audio_model_cache[model_name] = (wrapper, feature_extractor, sr)
+        sr = getattr(feature_extractor, "sampling_rate", 16000)
 
-    update_progress(1.0, f"✅ {model_name} ready!")
-    print(f"✅ Audio model {model_name} loaded on {device}", flush=True)
+        wrapper = AudioModelWrapper(model, feature_extractor, model_name, sr)
+        wrapper = wrapper.to(device)
+        wrapper.eval()
 
-    return audio_model_cache[model_name]
+        audio_model_cache[model_name] = (wrapper, feature_extractor, sr)
+
+        update_progress(1.0, f"✅ {model_name} ready!")
+        print(f"✅ Audio model {model_name} loaded on {device}", flush=True)
+
+        return audio_model_cache[model_name]

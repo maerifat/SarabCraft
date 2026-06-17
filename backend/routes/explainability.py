@@ -21,6 +21,7 @@ if ROOT not in sys.path:
 from config import device
 from models.loader import load_model
 from utils.image import preprocess_image
+from backend.runtime.inference import inference_lock
 
 router = APIRouter()
 
@@ -137,15 +138,19 @@ def _overlay_heatmap_fast(image: Image.Image, cam: np.ndarray, alpha=0.5) -> Ima
 
 @router.post("/gradcam")
 def run_gradcam(req: GradCAMRequest):
+    # Sync def → Starlette runs this in its threadpool, off the event loop.
+    # The inference lock serializes GPU work (backward passes mutate shared
+    # model grads/hooks) against attacks and other gradcam calls.
     try:
         pil_img = _b64_to_pil(req.image_b64)
         model_name = req.model if "/" in req.model else "microsoft/resnet-50"
-        mdl, _ = load_model(model_name, progress=None)
+        with inference_lock():
+            mdl, _ = load_model(model_name, progress=None)
 
-        tensor = preprocess_image(pil_img, model_name)
-        tensor.requires_grad_(True)
+            tensor = preprocess_image(pil_img, model_name)
+            tensor.requires_grad_(True)
 
-        cam = _generate_gradcam(mdl, tensor, req.target_class)
+            cam = _generate_gradcam(mdl, tensor, req.target_class)
         if cam is None:
             raise HTTPException(400, "Could not generate GradCAM for this model architecture")
 
@@ -170,19 +175,21 @@ def compare_gradcam(req: GradCAMCompareRequest):
         model_name = req.model
         if "/" not in model_name:
             model_name = "microsoft/resnet-50"
-        mdl, _ = load_model(model_name, progress=None)
 
         results = {}
-        for key, b64 in [("original", req.original_b64), ("adversarial", req.adversarial_b64)]:
-            if not b64:
-                continue
-            pil_img = _b64_to_pil(b64)
-            tensor = preprocess_image(pil_img, model_name)
-            tensor.requires_grad_(True)
-            cam = _generate_gradcam(mdl, tensor)
-            if cam is not None:
-                overlay = _overlay_heatmap_fast(pil_img, cam)
-                results[f"{key}_overlay"] = _pil_to_b64(overlay)
+        with inference_lock():
+            mdl, _ = load_model(model_name, progress=None)
+
+            for key, b64 in [("original", req.original_b64), ("adversarial", req.adversarial_b64)]:
+                if not b64:
+                    continue
+                pil_img = _b64_to_pil(b64)
+                tensor = preprocess_image(pil_img, model_name)
+                tensor.requires_grad_(True)
+                cam = _generate_gradcam(mdl, tensor)
+                if cam is not None:
+                    overlay = _overlay_heatmap_fast(pil_img, cam)
+                    results[f"{key}_overlay"] = _pil_to_b64(overlay)
 
         return results
     except Exception as e:

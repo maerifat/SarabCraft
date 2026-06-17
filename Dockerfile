@@ -40,7 +40,10 @@ COPY backend/ ./backend/
 COPY --from=frontend-build /build/dist/ ./frontend/dist/
 
 ENV PYTHONUNBUFFERED=1 \
-    HF_HUB_DISABLE_TELEMETRY=1
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    HF_HUB_DISABLE_XET=1 \
+    HF_HUB_DOWNLOAD_TIMEOUT=30 \
+    HF_HUB_ETAG_TIMEOUT=10
 
 EXPOSE 8000
 

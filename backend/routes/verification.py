@@ -26,6 +26,7 @@ from verification.registry import _ensure_loaded as _ensure_image_loaded
 from verification.audio_registry import run_audio_verification, get_all_audio_verifiers
 from verification.audio_registry import _ensure_audio_loaded
 from plugins._base import get_enabled_plugins, run_local_plugin
+from backend.runtime.inference import run_inference
 
 router = APIRouter()
 
@@ -139,32 +140,39 @@ async def run_image_verification(req: ImageVerificationRequest):
             remote_targets.append(target)
 
     try:
-        results = run_verification(
-            adv_img, orig_img, req.target_label, req.original_label,
-            local_model_names=local_names,
-            remote_targets=remote_targets or None,
-            local_exact_preprocess=(req.preprocess_mode == "exact"),
-        )
+        def _verify():
+            results = run_verification(
+                adv_img, orig_img, req.target_label, req.original_label,
+                local_model_names=local_names,
+                remote_targets=remote_targets or None,
+                local_exact_preprocess=(req.preprocess_mode == "exact"),
+            )
 
-        def to_dict(r):
-            d = {
-                "verifier_name": r.verifier_name,
-                "service_type": r.service_type,
-                "matched_target": r.matched_target,
-                "original_label_gone": r.original_label_gone,
-                "confidence_drop": r.confidence_drop,
-                "elapsed_ms": r.elapsed_ms,
-                "error": r.error,
-            }
-            d["predictions"] = [{"label": p.label, "confidence": p.confidence} for p in r.predictions[:5]]
-            return d
+            def to_dict(r):
+                d = {
+                    "verifier_name": r.verifier_name,
+                    "service_type": r.service_type,
+                    "matched_target": r.matched_target,
+                    "original_label_gone": r.original_label_gone,
+                    "confidence_drop": r.confidence_drop,
+                    "elapsed_ms": r.elapsed_ms,
+                    "error": r.error,
+                }
+                d["predictions"] = [{"label": p.label, "confidence": p.confidence} for p in r.predictions[:5]]
+                return d
 
-        result_dicts = [to_dict(r) for r in results]
+            result_dicts = [to_dict(r) for r in results]
 
-        if req.plugin_ids:
-            plugin_results = _run_plugins_for_image(req.plugin_ids, adv_img, orig_img, req.target_label)
-            result_dicts.extend(plugin_results)
+            if req.plugin_ids:
+                plugin_results = _run_plugins_for_image(req.plugin_ids, adv_img, orig_img, req.target_label)
+                result_dicts.extend(plugin_results)
+            return result_dicts
 
+        # Verification is network-heavy (cloud APIs); run it off the event loop.
+        # serialize=False because local-model torch inference serializes itself
+        # via the inference lock inside the verifier — no need to hold the GPU
+        # lock across slow network calls.
+        result_dicts = await run_inference(_verify, serialize=False)
         return {"results": result_dicts}
     except Exception as e:
         raise HTTPException(500, f"Verification failed: {str(e)}")
@@ -248,16 +256,18 @@ async def run_audio_verification_api(req: AudioVerificationRequest):
             target = resolve_verification_target(target_id, domain="audio")
             if target:
                 remote_targets.append(target)
-        results = run_audio_verification(
-            adversarial_audio=adv_np,
-            original_audio=orig_np,
-            sample_rate=sample_rate,
-            target_text=req.target_text,
-            original_text=req.original_text,
-            remote_targets=remote_targets or None,
-            language=req.language,
-        )
-        audio_result_dicts = [
+
+        def _verify_audio():
+            results = run_audio_verification(
+                adversarial_audio=adv_np,
+                original_audio=orig_np,
+                sample_rate=sample_rate,
+                target_text=req.target_text,
+                original_text=req.original_text,
+                remote_targets=remote_targets or None,
+                language=req.language,
+            )
+            audio_result_dicts = [
                 {
                     "verifier_name": r.verifier_name,
                     "service_type": r.service_type,
@@ -273,11 +283,13 @@ async def run_audio_verification_api(req: AudioVerificationRequest):
                 for r in results
             ]
 
-        if req.plugin_ids:
-            audio_result_dicts.extend(
-                _run_plugins_for_audio(req.plugin_ids, adv_np, orig_np, sample_rate, req.target_text)
-            )
+            if req.plugin_ids:
+                audio_result_dicts.extend(
+                    _run_plugins_for_audio(req.plugin_ids, adv_np, orig_np, sample_rate, req.target_text)
+                )
+            return audio_result_dicts
 
+        audio_result_dicts = await run_inference(_verify_audio, serialize=False)
         return {"results": audio_result_dicts}
     except Exception as e:
         raise HTTPException(500, f"Audio verification failed: {str(e)}")

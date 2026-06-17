@@ -9,12 +9,17 @@ computation remains differentiable (via torchaudio).
 import torch
 import torch.nn as nn
 import torchaudio
+import threading
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
 from config import device
 
 
 asr_model_cache = {}
+_asr_cache_lock = threading.Lock()
+# Per-model load locks so a slow download doesn't block other models.
+from collections import defaultdict as _defaultdict
+_asr_model_locks: "dict[str, threading.Lock]" = _defaultdict(threading.Lock)
 
 WHISPER_SAMPLE_RATE = 16000
 WHISPER_N_FFT = 400
@@ -151,26 +156,34 @@ def load_asr_model(model_name, progress=None):
         update_progress(1.0, f"Cached: {model_name}")
         return asr_model_cache[model_name]
 
-    update_progress(0.1, f"Downloading {model_name}...")
-    print(f"Loading ASR model: {model_name}...", flush=True)
+    with _asr_cache_lock:
+        model_lock = _asr_model_locks[model_name]
 
-    update_progress(0.3, "Loading processor...")
-    processor = WhisperProcessor.from_pretrained(model_name)
+    with model_lock:
+        if model_name in asr_model_cache:
+            update_progress(1.0, f"Cached: {model_name}")
+            return asr_model_cache[model_name]
 
-    update_progress(0.5, "Loading model weights...")
-    model = WhisperForConditionalGeneration.from_pretrained(model_name)
+        update_progress(0.1, f"Downloading {model_name}...")
+        print(f"Loading ASR model: {model_name}...", flush=True)
 
-    update_progress(0.8, f"Moving to {device}...")
-    model = model.to(device)
-    model.eval()
+        update_progress(0.3, "Loading processor...")
+        processor = WhisperProcessor.from_pretrained(model_name)
 
-    wrapper = WhisperAttackWrapper(model, processor)
-    wrapper = wrapper.to(device)
-    wrapper.eval()
+        update_progress(0.5, "Loading model weights...")
+        model = WhisperForConditionalGeneration.from_pretrained(model_name)
 
-    asr_model_cache[model_name] = (wrapper, processor)
+        update_progress(0.8, f"Moving to {device}...")
+        model = model.to(device)
+        model.eval()
 
-    update_progress(1.0, f"{model_name} ready!")
-    print(f"ASR model {model_name} loaded on {device}", flush=True)
+        wrapper = WhisperAttackWrapper(model, processor)
+        wrapper = wrapper.to(device)
+        wrapper.eval()
 
-    return asr_model_cache[model_name]
+        asr_model_cache[model_name] = (wrapper, processor)
+
+        update_progress(1.0, f"{model_name} ready!")
+        print(f"ASR model {model_name} loaded on {device}", flush=True)
+
+        return asr_model_cache[model_name]

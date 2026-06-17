@@ -110,6 +110,39 @@ async function runJob(kind, fd, { signal, onCreated, cancelOnAbort = true } = {}
   }
 }
 
+/**
+ * Attach to an *already-submitted* job and poll it to completion, emitting
+ * progress as it goes. Unlike runJob this does NOT create a job — it's used to
+ * re-attach to a job that is still queued/running (e.g. after a page refresh or
+ * when reopening a running job from the Jobs page) so the attack page can show
+ * live progress and pick up the final result exactly as if it had been waited
+ * on from the start.
+ *
+ * Returns the final result on completion. Throws on failure/cancellation/abort.
+ * Aborting does NOT cancel the backend job (cancelOnAbort defaults false) —
+ * detaching from a running job should leave it running.
+ */
+async function followJob(jobId, { signal, onProgress, cancelOnAbort = false } = {}) {
+  const detachAbort = attachAbortCancellation(signal, () => jobId, { cancelOnAbort })
+  let afterEventId = 0
+  try {
+    while (true) {
+      if (signal?.aborted) throw abortError()
+      const job = await getJob(jobId, { afterEventId, signal })
+      for (const event of job.events || []) {
+        afterEventId = Math.max(afterEventId, event.id)
+      }
+      if (onProgress && job.progress) onProgress(job.progress, job)
+      if (job.status === 'completed') return job.result
+      if (job.status === 'failed') throw new Error(job.error_message || 'Job failed')
+      if (job.status === 'cancelled') throw new Error('Job cancelled')
+      await sleep(1000, signal)
+    }
+  } finally {
+    detachAbort()
+  }
+}
+
 function streamJob(kind, fd, { onCreated, onInit, onProgress, onResult, onSummary, onError, onDone, signal, cancelOnAbort = true } = {}) {
   const controller = signal ? undefined : new AbortController()
   const sig = signal || controller?.signal
@@ -177,6 +210,7 @@ export const getModels = () => get('/models/sources?domain=image&task=image_clas
 export const getAttacks = () => get('/attacks/methods');
 export const classifyImage = fd => postFD('/attacks/image/classify', fd);
 export const runImageAttack = (fd, opts = {}) => runJob('image_attack', fd, opts);
+export const followImageAttackJob = (jobId, opts = {}) => followJob(jobId, opts);
 
 // Verification
 export const getVerificationTargets = (domain = 'image') => get(`/models/verification?domain=${encodeURIComponent(domain)}`);

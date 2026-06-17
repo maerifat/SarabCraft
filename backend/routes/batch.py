@@ -42,6 +42,7 @@ from utils.image import preprocess_image, tensor_to_pil, get_predictions
 from utils.metrics import compute_metrics
 from attacks.image.router import run_attack_method
 from backend.routes.history import save_entry
+from backend.runtime.inference import run_inference, inference_lock
 
 logger = logging.getLogger(__name__)
 
@@ -88,73 +89,80 @@ async def run_batch_attack(
     model_name = str(model_entry["model_ref"])
     model_snapshot = snapshot_entry(model_entry)
 
-    mdl, _ = load_model(model_name, progress=None)
-    target_tensor = preprocess_image(target_img, model_name)
-    _, target_class, target_idx = get_predictions(mdl, target_tensor)
+    # Read all uploads up front (needs the async context), then run the heavy
+    # compute loop off the event loop so other users aren't blocked.
+    uploads = []
+    for f in input_files:
+        uploads.append((f.filename, await f.read()))
 
-    results = []
-    total = len(input_files)
+    def _work():
+        mdl, _ = load_model(model_name, progress=None)
+        target_tensor = preprocess_image(target_img, model_name)
+        _, target_class, target_idx = get_predictions(mdl, target_tensor)
 
-    for i, f in enumerate(input_files):
-        entry = {"filename": f.filename, "index": i}
-        try:
-            data = await f.read()
-            img = _parse_image(data)
-            input_tensor = preprocess_image(img, model_name)
-            orig_preds, orig_class, _ = get_predictions(mdl, input_tensor)
+        results = []
+        total = len(uploads)
 
-            adv_tensor = run_attack_method(
-                attack, mdl, input_tensor, target_idx,
-                epsilon / 255.0, iterations, {}
-            )
-            adv_preds, adv_class, _ = get_predictions(mdl, adv_tensor)
-            metrics = compute_metrics(input_tensor, adv_tensor)
-            success = adv_class == target_class
-
-            entry.update({
-                "success": success,
-                "original_class": orig_class,
-                "adversarial_class": adv_class,
-                "metrics": metrics,
-            })
-
+        for i, (fname, data) in enumerate(uploads):
+            entry = {"filename": fname, "index": i}
             try:
-                save_entry({
-                    "domain": "image", "attack": attack, "model": snapshot_display_name(model_snapshot, model_name),
-                    "model_id": model_snapshot.get("id") if model_snapshot else None,
-                    "model_ref": model_name,
-                    "model_snapshot": model_snapshot,
-                    "epsilon": epsilon / 255.0, "iterations": iterations,
-                    "success": success, "original_class": orig_class,
-                    "adversarial_class": adv_class, "target_class": target_class,
-                    "metrics": metrics, "batch": True,
+                img = _parse_image(data)
+                input_tensor = preprocess_image(img, model_name)
+                orig_preds, orig_class, _ = get_predictions(mdl, input_tensor)
+
+                adv_tensor = run_attack_method(
+                    attack, mdl, input_tensor, target_idx,
+                    epsilon / 255.0, iterations, {}
+                )
+                adv_preds, adv_class, _ = get_predictions(mdl, adv_tensor)
+                metrics = compute_metrics(input_tensor, adv_tensor)
+                success = adv_class == target_class
+
+                entry.update({
+                    "success": success,
+                    "original_class": orig_class,
+                    "adversarial_class": adv_class,
+                    "metrics": metrics,
                 })
-            except Exception as exc:
-                import logging
-                logging.getLogger(__name__).warning("Failed to save batch history entry: %s", exc)
 
-        except Exception as e:
-            entry["error"] = str(e)
-            entry["success"] = False
+                try:
+                    save_entry({
+                        "domain": "image", "attack": attack, "model": snapshot_display_name(model_snapshot, model_name),
+                        "model_id": model_snapshot.get("id") if model_snapshot else None,
+                        "model_ref": model_name,
+                        "model_snapshot": model_snapshot,
+                        "epsilon": epsilon / 255.0, "iterations": iterations,
+                        "success": success, "original_class": orig_class,
+                        "adversarial_class": adv_class, "target_class": target_class,
+                        "metrics": metrics, "batch": True,
+                    })
+                except Exception as exc:
+                    logging.getLogger(__name__).warning("Failed to save batch history entry: %s", exc)
 
-        results.append(entry)
+            except Exception as e:
+                entry["error"] = str(e)
+                entry["success"] = False
 
-    successes = sum(1 for r in results if r.get("success"))
-    metric_results = [r["metrics"] for r in results if r.get("metrics")]
-    avg_l2 = float(np.mean([m["l2"] for m in metric_results])) if metric_results else 0.0
-    avg_ssim = float(np.mean([m["ssim"] for m in metric_results])) if metric_results else 0.0
+            results.append(entry)
 
-    return {
-        "total": total,
-        "successes": successes,
-        "success_rate": successes / total if total else 0,
-        "target_class": target_class,
-        "attack": attack,
-        "model": model_name,
-        "avg_l2": round(float(avg_l2), 6),
-        "avg_ssim": round(float(avg_ssim), 4),
-        "results": results,
-    }
+        successes = sum(1 for r in results if r.get("success"))
+        metric_results = [r["metrics"] for r in results if r.get("metrics")]
+        avg_l2 = float(np.mean([m["l2"] for m in metric_results])) if metric_results else 0.0
+        avg_ssim = float(np.mean([m["ssim"] for m in metric_results])) if metric_results else 0.0
+
+        return {
+            "total": total,
+            "successes": successes,
+            "success_rate": successes / total if total else 0,
+            "target_class": target_class,
+            "attack": attack,
+            "model": model_name,
+            "avg_l2": round(float(avg_l2), 6),
+            "avg_ssim": round(float(avg_ssim), 4),
+            "results": results,
+        }
+
+    return await run_inference(_work)
 
 
 @router.post("/robustness/run")
@@ -226,19 +234,20 @@ async def run_robustness_comparison(
             }
             try:
                 t0 = time.time()
-                mdl, _ = load_model(model_name, progress=None)
+                with inference_lock():
+                    mdl, _ = load_model(model_name, progress=None)
 
-                input_tensor = preprocess_image(input_img, model_name)
-                target_tensor = preprocess_image(target_img, model_name)
-                orig_preds, orig_class, _ = get_predictions(mdl, input_tensor)
-                _, target_class, target_idx = get_predictions(mdl, target_tensor)
+                    input_tensor = preprocess_image(input_img, model_name)
+                    target_tensor = preprocess_image(target_img, model_name)
+                    orig_preds, orig_class, _ = get_predictions(mdl, input_tensor)
+                    _, target_class, target_idx = get_predictions(mdl, target_tensor)
 
-                adv_tensor = run_attack_method(
-                    attack, mdl, input_tensor, target_idx,
-                    epsilon / 255.0, iterations, attack_extra
-                )
-                adv_preds, adv_class, _ = get_predictions(mdl, adv_tensor)
-                metrics = compute_metrics(input_tensor, adv_tensor)
+                    adv_tensor = run_attack_method(
+                        attack, mdl, input_tensor, target_idx,
+                        epsilon / 255.0, iterations, attack_extra
+                    )
+                    adv_preds, adv_class, _ = get_predictions(mdl, adv_tensor)
+                    metrics = compute_metrics(input_tensor, adv_tensor)
                 success = adv_class == target_class
                 elapsed = round((time.time() - t0) * 1000)
 
@@ -350,32 +359,34 @@ def _run_audio_attack_for_model(atk_key, wav_tensor, sr, model_key, target_text,
     if not model_entry or not model_entry.get("model_ref"):
         raise ValueError(f"Unknown ASR model: {model_key}")
     model_name = str(model_entry["model_ref"])
-    wrapper, _ = load_asr_model(model_name, progress=None)
-    orig_text = wrapper.transcribe(wav_tensor)
+    # Serialize GPU work for this model against other concurrent requests.
+    with inference_lock():
+        wrapper, _ = load_asr_model(model_name, progress=None)
+        orig_text = wrapper.transcribe(wav_tensor)
 
-    eps = params.get("epsilon", 0.05)
-    iters = params.get("iterations", 300)
-    lr = params.get("lr", 0.005)
+        eps = params.get("epsilon", 0.05)
+        iters = params.get("iterations", 300)
+        lr = params.get("lr", 0.005)
 
-    if atk_key == "transcription":
-        from attacks.audio.transcription_attack import targeted_transcription_attack
-        adv = targeted_transcription_attack(wrapper, wav_tensor, target_text, epsilon=eps, iterations=iters, lr=lr)
-    elif atk_key == "hidden_command":
-        from attacks.audio.hidden_command import hidden_command_attack
-        adv = hidden_command_attack(wrapper, wav_tensor, target_text, epsilon=eps, iterations=iters, lr=lr)
-    elif atk_key == "psychoacoustic":
-        from attacks.audio.psychoacoustic_attack import psychoacoustic_transcription_attack
-        adv = psychoacoustic_transcription_attack(wrapper, wav_tensor, target_text, iterations=iters, lr=lr)
-    elif atk_key == "ota":
-        from attacks.audio.over_the_air_attack import over_the_air_attack
-        adv = over_the_air_attack(wrapper, wav_tensor, target_text, epsilon=eps, iterations=iters, lr=lr)
-    elif atk_key == "jamming":
-        from attacks.audio.speech_jamming import speech_jamming_untargeted
-        adv = speech_jamming_untargeted(wrapper, wav_tensor, epsilon=eps, iterations=iters, lr=lr)
-    else:
-        raise ValueError(f"Unknown audio attack key: {atk_key}")
+        if atk_key == "transcription":
+            from attacks.audio.transcription_attack import targeted_transcription_attack
+            adv = targeted_transcription_attack(wrapper, wav_tensor, target_text, epsilon=eps, iterations=iters, lr=lr)
+        elif atk_key == "hidden_command":
+            from attacks.audio.hidden_command import hidden_command_attack
+            adv = hidden_command_attack(wrapper, wav_tensor, target_text, epsilon=eps, iterations=iters, lr=lr)
+        elif atk_key == "psychoacoustic":
+            from attacks.audio.psychoacoustic_attack import psychoacoustic_transcription_attack
+            adv = psychoacoustic_transcription_attack(wrapper, wav_tensor, target_text, iterations=iters, lr=lr)
+        elif atk_key == "ota":
+            from attacks.audio.over_the_air_attack import over_the_air_attack
+            adv = over_the_air_attack(wrapper, wav_tensor, target_text, epsilon=eps, iterations=iters, lr=lr)
+        elif atk_key == "jamming":
+            from attacks.audio.speech_jamming import speech_jamming_untargeted
+            adv = speech_jamming_untargeted(wrapper, wav_tensor, epsilon=eps, iterations=iters, lr=lr)
+        else:
+            raise ValueError(f"Unknown audio attack key: {atk_key}")
 
-    result_text = wrapper.transcribe(adv) if adv is not None else ""
+        result_text = wrapper.transcribe(adv) if adv is not None else ""
     return adv, result_text, orig_text
 
 

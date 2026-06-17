@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Link } from 'react-router-dom'
-import { runImageAttack, getModels, getAttacks, createAbortable, cancelJobById, getJobDetails, getJobArtifactDataUrl } from '../api/client'
+import { Link, useSearchParams } from 'react-router-dom'
+import { runImageAttack, followImageAttackJob, getModels, getAttacks, createAbortable, cancelJobById, getJobDetails, getJobArtifactDataUrl } from '../api/client'
 import TransferModal from './TransferModal'
 import MetricsPanel from './MetricsPanel'
 import GradCAMPanel from './GradCAMPanel'
@@ -44,6 +44,7 @@ export default function ImageAttackTab() {
     loading, setLoading,
     error, setError,
     currentJobId, setCurrentJobId,
+    progress, setProgress,
     abortRef,
     jobIdRef,
     restoreFromJob,
@@ -55,6 +56,7 @@ export default function ImageAttackTab() {
   const [transferModal, setTransferModal] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [infoOpen, setInfoOpen] = useState(null)
+  const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(() => {
     Promise.all([getModels(), getAttacks()]).then(([m, a]) => {
@@ -71,43 +73,101 @@ export default function ImageAttackTab() {
 
   const LAST_JOB_KEY = 'sarabcraft.imageAttack.lastJobId'
 
-  // Remember the most recent completed attack so a hard refresh can recover it.
+  // Persist the current job (running OR completed) so a hard refresh can
+  // re-attach to it — a running job will resume live progress, a completed one
+  // restores its result, both with their input/target images.
   useEffect(() => {
-    if (result && currentJobId) {
+    if (currentJobId && (loading || result)) {
       try { window.localStorage.setItem(LAST_JOB_KEY, currentJobId) } catch { /* ignore */ }
     }
-  }, [result, currentJobId])
+  }, [result, loading, currentJobId])
 
-  // On mount: if there's no in-memory result but we have a saved job, rehydrate it.
+  // Pull both the input and target image artifacts back as data-URLs.
+  const fetchJobImages = async (detail) => {
+    const findArtifact = (field) => (detail.artifacts || []).find(
+      (a) => a.role === `input-${field}` || a.metadata_json?.field === field
+    )
+    const toDataUrl = async (artifact) => {
+      if (!artifact) return null
+      try { return await getJobArtifactDataUrl(detail.job_id, artifact.id) } catch { return null }
+    }
+    const [inputDataUrl, targetDataUrl] = await Promise.all([
+      toDataUrl(findArtifact('input_file')),
+      toDataUrl(findArtifact('target_file')),
+    ])
+    return { inputDataUrl, targetDataUrl }
+  }
+
+  // Re-attach the page to an existing job: restore form/images, and if the job
+  // is still queued/running, resume live-progress polling until it completes.
+  const attachToJob = async (jobId, { signal } = {}) => {
+    const detail = await getJobDetails(jobId)
+    if (detail?.kind !== 'image_attack') {
+      throw new Error('Only image attacks can be opened on this page')
+    }
+    const isLive = ['queued', 'running'].includes(detail.status)
+    if (!isLive && (detail.status !== 'completed' || !detail?.result?.adversarial_b64)) {
+      // Nothing useful to restore (failed/cancelled with no result).
+      try { window.localStorage.removeItem(LAST_JOB_KEY) } catch { /* ignore */ }
+      throw new Error(detail.error_message || 'Job has no recoverable result')
+    }
+    const { inputDataUrl, targetDataUrl } = await fetchJobImages(detail)
+    restoreFromJob(detail, { inputDataUrl, targetDataUrl, live: isLive })
+
+    if (!isLive) return
+
+    // Resume live progress on a running job. Detaching (navigation/refresh)
+    // leaves the backend job running; we never cancel it here.
+    try {
+      const nextResult = await followImageAttackJob(jobId, {
+        signal,
+        onProgress: (p) => setProgress(p),
+      })
+      setResult(nextResult)
+    } catch (e) {
+      if (e.name !== 'AbortError') setError(e.message)
+    } finally {
+      setLoading(false)
+      setProgress(null)
+    }
+  }
+
+  // On mount: re-attach to a job from the ?job=<id> deep link (preferred) or
+  // the last saved job in localStorage. Handles running AND completed jobs.
   useEffect(() => {
-    if (result || loading) return
-    let savedJobId = ''
-    try { savedJobId = window.localStorage.getItem(LAST_JOB_KEY) || '' } catch { savedJobId = '' }
+    const deepLinkJob = searchParams.get('job') || ''
+    let savedJobId = deepLinkJob
+    if (!savedJobId) {
+      // Don't clobber an in-memory session that's already showing something.
+      if (result || loading) return
+      try { savedJobId = window.localStorage.getItem(LAST_JOB_KEY) || '' } catch { savedJobId = '' }
+    }
     if (!savedJobId) return
-    let cancelled = false
+    // Already attached to this exact job — nothing to do.
+    if (savedJobId === currentJobId && (result || loading)) {
+      if (deepLinkJob) { const sp = new URLSearchParams(searchParams); sp.delete('job'); setSearchParams(sp, { replace: true }) }
+      return
+    }
+
+    const { signal, abort } = createAbortable()
+    abortRef.current = { abort }
     ;(async () => {
       try {
-        const detail = await getJobDetails(savedJobId)
-        if (cancelled) return
-        if (detail?.status !== 'completed' || !detail?.result?.adversarial_b64) {
-          try { window.localStorage.removeItem(LAST_JOB_KEY) } catch { /* ignore */ }
-          return
-        }
-        let inputDataUrl = null
-        const inputArtifact = (detail.artifacts || []).find(
-          (artifact) => artifact.role === 'input-input_file' || artifact.metadata_json?.field === 'input_file'
-        )
-        if (inputArtifact) {
-          try { inputDataUrl = await getJobArtifactDataUrl(savedJobId, inputArtifact.id) } catch { inputDataUrl = null }
-        }
-        if (!cancelled) restoreFromJob(detail, { inputDataUrl })
+        await attachToJob(savedJobId, { signal })
       } catch {
-        /* job no longer available — leave the form blank */
+        /* job gone or not recoverable — leave the form as-is */
+      } finally {
+        // Clear the deep-link param so a later manual run doesn't re-trigger.
+        if (deepLinkJob) {
+          const sp = new URLSearchParams(searchParams)
+          sp.delete('job')
+          setSearchParams(sp, { replace: true })
+        }
       }
     })()
-    return () => { cancelled = true }
+    return () => abort()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [searchParams])
 
   const attackMeta = registry[attack] || {}
   const attackParams = attackMeta.params || {}
@@ -149,6 +209,7 @@ export default function ImageAttackTab() {
     setError('')
     setResult(null)
     setCurrentJobId('')
+    setProgress(null)
     try { window.localStorage.removeItem('sarabcraft.imageAttack.lastJobId') } catch { /* ignore */ }
     try {
       const fd = new FormData()
@@ -170,6 +231,13 @@ export default function ImageAttackTab() {
         onCreated: (job) => {
           jobIdRef.current = job.job_id
           setCurrentJobId(job.job_id)
+          // Re-attach a progress poller to this job; runImageAttack itself only
+          // resolves with the final result. This poller is read-only and never
+          // cancels the job (it stops once the job leaves a live state).
+          followImageAttackJob(job.job_id, {
+            signal,
+            onProgress: (p) => setProgress(p),
+          }).catch(() => {})
         },
       })
       setResult(nextResult)
@@ -177,15 +245,18 @@ export default function ImageAttackTab() {
       if (e.name !== 'AbortError') setError(e.message)
     } finally {
       setLoading(false)
+      setProgress(null)
       abortRef.current = null
     }
   }
 
   const handleCancel = async () => {
-    const jobId = jobIdRef.current
+    const jobId = jobIdRef.current || currentJobId
     abortRef.current?.abort()
     abortRef.current = null
     setLoading(false)
+    setProgress(null)
+    try { window.localStorage.removeItem('sarabcraft.imageAttack.lastJobId') } catch { /* ignore */ }
     setError('Cancellation requested. Open Jobs to monitor or resume later.')
     if (!jobId) return
     try {
@@ -265,8 +336,22 @@ export default function ImageAttackTab() {
               </Link>
             )}
           </div>
+          {loading && (
+            <div className="mt-3 space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] text-slate-500">
+                <span>{progress?.message || 'Waiting for worker...'}</span>
+                <span>{progress?.current ?? 0}/{progress?.total ?? 1}</span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-slate-700/50 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[var(--accent)] to-cyan-400 transition-all duration-300"
+                  style={{ width: `${Math.max(0, Math.min(100, progress?.percent ?? 0))}%` }}
+                />
+              </div>
+            </div>
+          )}
           <p className="mt-3 text-[11px] text-slate-500">
-            Jobs keeps queue state, cancellation, and resume controls visible even after refresh or navigation.
+            Jobs keeps queue state, cancellation, and resume controls visible even after refresh or navigation. This page auto-reconnects to a running job on refresh.
           </p>
         </Card>
       )}
