@@ -1066,6 +1066,7 @@ Set `chained_back_translation: 3` — it routes through 3 random pivot languages
 | Alzantot GA | ⚡ Slow | Very High | Black-box | Hard targets, multi-word changes |
 | HotFlip | ⚡⚡⚡ Fast | Medium | **White-box** | Research, gradient access available |
 | Back-Translation | ⚡ Slow | Very High | Black-box | Structurally different paraphrases |
+| Bad Characters | ⚡⚡ Medium | **Imperceptible** | Black-box | Visually-identical Unicode attacks (homoglyph/invisible/deletion/reordering) |
 
 ### Model Query Count (for a 12-word sentence)
 

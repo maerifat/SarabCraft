@@ -166,7 +166,7 @@ Use Docker when you want the full analyst workflow, including long-running jobs,
 - **Multi-image transfer mode** unlocks broader bank-building strategies for harder evaluations.
 - **Cloud verification stays in the same workflow** through AWS Rekognition, Azure Computer Vision, and Google Cloud Vision integrations.
 
-### Text Attacks (14 types)
+### Text Attacks (24 types)
 
 | Category | Method | Description |
 |---|---|---|
@@ -182,8 +182,18 @@ Use Docker when you want the full analyst workflow, including long-running jobs,
 | | Faster Alzantot GA | Optimized genetic algorithm 10-20x faster than original Alzantot using language model scoring for fluency. |
 | | IGA | Improved Genetic Algorithm with prioritized word importance ranking and enhanced search strategy. |
 | | PSO | Particle Swarm Optimization with sememe-based word substitution. Combinatorial optimization approach. |
+| | A2T | Gradient word-importance ranking with embedding or MLM substitution; the attack behind adversarial training (Yoo & Qi 2021). |
+| | Kuleshov2017 | Greedy word substitution constrained by thought-vector distance and a GPT-2 language-model fluency budget. |
 | **Sentence-Level** | Clare | Contextualized perturbation using BERT MLM for Replace, Insert, and Merge operations. |
 | | Back-Translation | Paraphrase via translation round-trip: English → pivot language → English using MarianMT. |
+| | CheckList | Behavioural testing (MFT/INV/DIR) with negation, contraction, temporal, taxonomy, number, typo, and NER perturbations. |
+| | StressTest | Six NLI stress tests: antonymy, numerical, word-overlap, negation, length-mismatch, and spelling-error distractions. |
+| | SCPN | Syntactically Controlled Paraphrase Network — encoder-decoder paraphrases conditioned on target constituency parses. |
+| **Universal** | UAT | Universal Adversarial Triggers — gradient-optimized token sequence that flips predictions when prepended/appended. |
+| **Deletion** | Input Reduction | Iteratively removes least-important words while preserving the prediction, exposing pathological over-confidence. |
+| **Embedding-Space** | Seq2Sick | Projected-gradient attack with group-lasso sparsity for seq2seq/classifier models (non-overlapping & targeted-keyword). |
+| **Morphological** | MorpheuS | Greedy inflectional morphology attack (NOUN/VERB/ADJ) minimizing model confidence via lemminflect. |
+| **General (Imperceptible)** | Bad Characters | Imperceptible Unicode perturbations — homoglyphs, zero-width invisibles, backspace-deletions, and BiDi reorderings — optimized with black-box Differential Evolution. Visually identical, byte-different. |
 
 ### Audio Attacks (8 types)
 

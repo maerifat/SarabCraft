@@ -534,4 +534,31 @@ TEXT_ATTACK_REGISTRY = {
                               "desc": "Restrict inflections to matching POS (official default)"},
         },
     },
+
+    # ── General (Imperceptible Unicode) ──────────────────────────────────
+    "Bad Characters": {
+        "cat": "General (Imperceptible)",
+        "threat": "blackbox",
+        "paper": "Bad Characters: Imperceptible NLP Attacks",
+        "authors": "Boucher et al.",
+        "year": 2021,
+        "arxiv": "2106.09898",
+        "desc": "Faithful to the official QData/TextAttack BadCharacters2021 recipe. "
+                "Imperceptible, visually-identical perturbations built from Unicode "
+                "tricks that flip predictions while leaving rendered text unchanged: "
+                "Homoglyphs (Unicode look-alike chars), Invisible (zero-width chars "
+                "U+200B/C/D), Deletions (printable char + backspace pairs, net no-op "
+                "when rendered), Reorderings (BiDi override swaps rendering identically "
+                "but reordering code points). Black-box Differential Evolution search "
+                "(DE/rand/1/bin) over the perturbation vector, bounded by max_perturbs, "
+                "scored by victim confidence with early exit on label flip. IEEE S&P 2022.",
+        "params": {
+            "perturbation_type": {"type": "select", "default": "homoglyphs",
+                                  "options": ["homoglyphs", "invisible", "deletions", "reorderings"]},
+            "max_perturbs": {"type": "int", "default": 1, "min": 1, "max": 20, "step": 1},
+            "popsize": {"type": "int", "default": 32, "min": 4, "max": 128, "step": 4},
+            "maxiter": {"type": "int", "default": 10, "min": 1, "max": 50, "step": 1},
+            "seed": {"type": "int", "default": None, "min": 0, "max": 999999, "step": 1},
+        },
+    },
 }

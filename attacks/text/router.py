@@ -32,6 +32,7 @@ from attacks.text.input_reduction import run_input_reduction
 from attacks.text.kuleshov2017 import run_kuleshov2017
 from attacks.text.seq2sick import run_seq2sick
 from attacks.text.morpheus import run_morpheus
+from attacks.text.bad_characters import run_bad_characters
 
 logger = logging.getLogger("textattack.router")
 
@@ -309,6 +310,14 @@ TEXT_ATTACK_DISPATCH = {
     "MorpheuS": lambda w, tok, txt, tgt, p:
         run_morpheus(w, tok, txt, tgt,
             bool(p.get("constrain_pos", True))),
+
+    "Bad Characters": lambda w, tok, txt, tgt, p:
+        run_bad_characters(w, tok, txt, tgt,
+            str(p.get("perturbation_type", "homoglyphs")),
+            _p(p, "max_perturbs", 1, int),
+            _p(p, "popsize", 32, int),
+            _p(p, "maxiter", 10, int),
+            seed=p.get("seed", None)),
 }
 
 

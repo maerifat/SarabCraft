@@ -23,6 +23,7 @@ from .input_reduction import run_input_reduction
 from .kuleshov2017 import run_kuleshov2017
 from .seq2sick import run_seq2sick
 from .morpheus import run_morpheus
+from .bad_characters import run_bad_characters
 
 __all__ = [
     "run_deepwordbug",
@@ -48,4 +49,5 @@ __all__ = [
     "run_kuleshov2017",
     "run_seq2sick",
     "run_morpheus",
+    "run_bad_characters",
 ]
