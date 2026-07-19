@@ -878,4 +878,8 @@ AVAILABLE_TRANSCRIPTION_ATTACKS = {
     "Psychoacoustic": "Hearing-threshold masked perturbations, truly imperceptible — Qin et al. ICML 2019",
     "Over-the-Air Robust": "Perturbations that survive speaker→air→mic playback — Schönherr et al. 2020",
     "Speech Jamming": "Denial-of-service: degrade ASR accuracy to gibberish — untargeted/band-noise",
+    "Genetic (Black-box)": "Decision-based GA + gradient-estimation targeted transcription — Taori et al. 2019",
+    "SirenAttack (Black-box PSO)": "Gradient-free particle-swarm targeted/untargeted attack — Du et al. ASIACCS 2020",
+    "Task-Control (Prompt Injection)": "Universal prefix hijacks Whisper task (translate↔transcribe) — Vyas et al. EMNLP 2024",
+    "AdvPulse": "Subsecond synchronization-free universal targeted pulse — Li et al. CCS 2020",
 }

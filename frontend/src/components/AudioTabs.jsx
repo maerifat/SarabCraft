@@ -4,6 +4,7 @@ import {
   runTranscriptionAttack, runHiddenCommandAttack, runUniversalMutingAttack,
   runPsychoacousticAttack, runOverTheAirAttack, runSpeechJammingAttack,
   runAudioClassificationAttack, getUA3Models, runUA3Attack,
+  runGeneticAttack, runSirenAttack, runTaskControlAttack, runAdvPulseAttack,
 } from '../api/client'
 import { Card, SectionLabel } from './ui/Section'
 import AudioTransferModal from './AudioTransferModal'
@@ -14,6 +15,10 @@ import MutingTab from './audio/MutingTab'
 import PsychoacousticTab from './audio/PsychoacousticTab'
 import OTATab from './audio/OTATab'
 import JammingTab from './audio/JammingTab'
+import GeneticTab from './audio/GeneticTab'
+import SirenTab from './audio/SirenTab'
+import TaskControlTab from './audio/TaskControlTab'
+import AdvPulseTab from './audio/AdvPulseTab'
 import UA3Tab from './audio/UA3Tab'
 import ClassificationTab from './audio/ClassificationTab'
 import { AUDIO_ATTACK_REGISTRY, THREAT_COLORS, THREAT_LABEL } from './audio/audioAttackRegistry'
@@ -101,6 +106,10 @@ export default function AudioTabs() {
       {subTab === 'psycho' && <PsychoacousticTab asrKeys={asrKeys} {...shared} onRun={run(runPsychoacousticAttack)} onTransfer={openTransfer} />}
       {subTab === 'ota' && <OTATab asrKeys={asrKeys} {...shared} onRun={run(runOverTheAirAttack)} onTransfer={openTransfer} />}
       {subTab === 'jamming' && <JammingTab asrKeys={asrKeys} {...shared} onRun={run(runSpeechJammingAttack)} onTransfer={openTransfer} />}
+      {subTab === 'genetic' && <GeneticTab asrKeys={asrKeys} {...shared} onRun={run(runGeneticAttack)} onTransfer={openTransfer} />}
+      {subTab === 'siren' && <SirenTab asrKeys={asrKeys} {...shared} onRun={run(runSirenAttack)} onTransfer={openTransfer} />}
+      {subTab === 'taskcontrol' && <TaskControlTab asrKeys={asrKeys} {...shared} onRun={run(runTaskControlAttack)} onTransfer={openTransfer} />}
+      {subTab === 'advpulse' && <AdvPulseTab asrKeys={asrKeys} {...shared} onRun={run(runAdvPulseAttack)} onTransfer={openTransfer} />}
       {subTab === 'ua3' && <UA3Tab models={ua3ModelsList} asrKeys={asrKeys} {...shared} onRun={run(runUA3Attack)} onTransfer={openTransfer} />}
       {subTab === 'classification' && <ClassificationTab models={audioModelKeys} attacks={audioAttacksList} {...shared} onRun={run(runAudioClassificationAttack)} />}
 

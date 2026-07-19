@@ -63,6 +63,10 @@ def _file_policy(kind: str, fields: dict[str, Any]) -> dict[str, str]:
         "asr_psychoacoustic",
         "asr_over_the_air",
         "asr_speech_jamming",
+        "asr_genetic",
+        "asr_siren",
+        "asr_task_control",
+        "asr_advpulse",
         "asr_ua3",
         "audio_robustness",
     }:

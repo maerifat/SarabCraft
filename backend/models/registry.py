@@ -1010,6 +1010,10 @@ def enrich_job_fields(kind: str, fields: dict[str, Any]) -> dict[str, Any]:
         "asr_psychoacoustic",
         "asr_over_the_air",
         "asr_speech_jamming",
+        "asr_genetic",
+        "asr_siren",
+        "asr_task_control",
+        "asr_advpulse",
         "asr_ua3",
     }:
         snap = snapshot_source_model(enriched.get("model"), domain="audio", task=TASK_ASR)

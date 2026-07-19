@@ -248,6 +248,10 @@ export const runUniversalMutingAttack = fd => runJob('asr_universal_muting', fd)
 export const runPsychoacousticAttack = fd => runJob('asr_psychoacoustic', fd);
 export const runOverTheAirAttack = fd => runJob('asr_over_the_air', fd);
 export const runSpeechJammingAttack = fd => runJob('asr_speech_jamming', fd);
+export const runGeneticAttack = fd => runJob('asr_genetic', fd);
+export const runSirenAttack = fd => runJob('asr_siren', fd);
+export const runTaskControlAttack = fd => runJob('asr_task_control', fd);
+export const runAdvPulseAttack = fd => runJob('asr_advpulse', fd);
 export const transcribeAudio = fd => postFD('/attacks/asr/transcribe', fd);
 export const getUA3Models = () => get('/attacks/asr/ua3/models');
 export const runUA3Attack = fd => runJob('asr_ua3', fd);

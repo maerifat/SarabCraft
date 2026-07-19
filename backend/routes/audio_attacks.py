@@ -42,6 +42,10 @@ from attacks.audio.universal_muting import universal_muting_attack, apply_univer
 from attacks.audio.psychoacoustic_attack import psychoacoustic_transcription_attack
 from attacks.audio.over_the_air_attack import over_the_air_attack
 from attacks.audio.speech_jamming import speech_jamming_untargeted, speech_jamming_band_noise
+from attacks.audio.genetic_attack import genetic_targeted_attack
+from attacks.audio.siren_attack import siren_attack_asr
+from attacks.audio.task_control import task_control_universal_attack, apply_task_control_segment
+from attacks.audio.advpulse import advpulse_attack, apply_advpulse
 from backend.runtime.inference import run_inference, inference_lock
 
 router = APIRouter()
@@ -50,6 +54,8 @@ MAX_AUDIO_SIZE = 50 * 1024 * 1024  # 50 MB
 ALLOWED_OPTIMIZERS = {"C&W (Adam)", "PGD (Sign-based)"}
 ALLOWED_MUTING_MODES = {"Mute (Silence)", "Targeted Override"}
 ALLOWED_JAMMING_METHODS = {"Untargeted (Max CE)", "Band-Limited Noise"}
+ALLOWED_SIREN_MODES = {"Targeted", "Untargeted"}
+ALLOWED_TASK_CONTROL_TASKS = {"translate", "transcribe"}
 
 
 # ── Shared helpers ───────────────────────────────────────────────────────────
@@ -454,6 +460,170 @@ async def run_speech_jamming_attack(
             raise
         except Exception as e:
             raise HTTPException(500, f"Speech jamming attack failed: {str(e)}")
+        finally:
+            _cleanup(path)
+
+    return await run_inference(_work)
+
+
+# ── ASR: Genetic (Black-box) ─────────────────────────────────────────────────
+
+@router.post("/asr/genetic/run")
+async def run_genetic_attack(
+    audio_file: UploadFile = File(...),
+    model: str = Form(...),
+    target_text: str = Form(...),
+    epsilon: float = Form(0.05),
+    population_size: int = Form(20),
+    genetic_iterations: int = Form(300),
+    gradient_estimation_iterations: int = Form(100),
+):
+    content = await audio_file.read()
+    if len(content) > MAX_AUDIO_SIZE:
+        raise HTTPException(400, f"Audio file exceeds 50 MB limit ({len(content)} bytes)")
+
+    def _work():
+        wrapper, _ = _load_asr(model)
+        waveform, sr, path = _load_asr_audio(content, "gen")
+        try:
+            adv = genetic_targeted_attack(
+                wrapper, waveform, target_text.strip(),
+                epsilon=epsilon, population_size=int(population_size),
+                genetic_iterations=int(genetic_iterations),
+                gradient_estimation_iterations=int(gradient_estimation_iterations),
+            )
+            resp = _asr_response(adv, waveform, wrapper, sr, target_text=target_text.strip())
+            resp["wer"] = compute_wer(target_text.strip(), resp.get("adversarial_text", ""))
+            return resp
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Genetic attack failed: {str(e)}")
+        finally:
+            _cleanup(path)
+
+    return await run_inference(_work)
+
+
+# ── ASR: SirenAttack (Black-box PSO) ─────────────────────────────────────────
+
+@router.post("/asr/siren/run")
+async def run_siren_attack(
+    audio_file: UploadFile = File(...),
+    model: str = Form(...),
+    mode: str = Form("Targeted"),
+    target_text: str = Form(""),
+    epsilon: float = Form(0.05),
+    n_particles: int = Form(25),
+    iterations: int = Form(150),
+):
+    if mode not in ALLOWED_SIREN_MODES:
+        raise HTTPException(400, f"Invalid mode: {mode}. Allowed: {sorted(ALLOWED_SIREN_MODES)}")
+    if mode == "Targeted" and not target_text.strip():
+        raise HTTPException(400, "target_text is required for Targeted SirenAttack")
+    content = await audio_file.read()
+    if len(content) > MAX_AUDIO_SIZE:
+        raise HTTPException(400, f"Audio file exceeds 50 MB limit ({len(content)} bytes)")
+
+    def _work():
+        wrapper, _ = _load_asr(model)
+        waveform, sr, path = _load_asr_audio(content, "siren")
+        try:
+            targeted = mode == "Targeted"
+            adv = siren_attack_asr(
+                wrapper, waveform,
+                target_text=target_text.strip() if targeted else None,
+                targeted=targeted, epsilon=epsilon,
+                n_particles=int(n_particles), iterations=int(iterations),
+            )
+            extra = {"target_text": target_text.strip()} if targeted else {}
+            return _asr_response(adv, waveform, wrapper, sr, **extra)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"SirenAttack failed: {str(e)}")
+        finally:
+            _cleanup(path)
+
+    return await run_inference(_work)
+
+
+# ── ASR: Task-Control (Prompt Injection) ─────────────────────────────────────
+
+@router.post("/asr/task-control/run")
+async def run_task_control_attack(
+    audio_file: UploadFile = File(...),
+    model: str = Form(...),
+    task: str = Form("translate"),
+    language: str = Form(""),
+    segment_duration: float = Form(0.64),
+    iterations: int = Form(250),
+    lr: float = Form(0.01),
+):
+    if task not in ALLOWED_TASK_CONTROL_TASKS:
+        raise HTTPException(400, f"Invalid task: {task}. Allowed: {sorted(ALLOWED_TASK_CONTROL_TASKS)}")
+    content = await audio_file.read()
+    if len(content) > MAX_AUDIO_SIZE:
+        raise HTTPException(400, f"Audio file exceeds 50 MB limit ({len(content)} bytes)")
+
+    def _work():
+        wrapper, _ = _load_asr(model)
+        waveform, sr, path = _load_asr_audio(content, "task")
+        try:
+            training_waveforms = generate_training_waveforms(wrapper, waveform, n_augments=3)
+            segment = task_control_universal_attack(
+                wrapper, training_waveforms, task=task,
+                language=(language.strip() or None),
+                segment_duration=segment_duration,
+                iterations=int(iterations), lr=lr,
+            )
+            adv = apply_task_control_segment(segment, waveform)
+            return _asr_response(adv, waveform, wrapper, sr, task=task)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Task-control attack failed: {str(e)}")
+        finally:
+            _cleanup(path)
+
+    return await run_inference(_work)
+
+
+# ── ASR: AdvPulse ─────────────────────────────────────────────────────────────
+
+@router.post("/asr/advpulse/run")
+async def run_advpulse_attack(
+    audio_file: UploadFile = File(...),
+    model: str = Form(...),
+    target_text: str = Form(...),
+    pulse_duration: float = Form(0.3),
+    epsilon: float = Form(0.1),
+    iterations: int = Form(400),
+    lr: float = Form(0.005),
+    physical: bool = Form(False),
+):
+    content = await audio_file.read()
+    if len(content) > MAX_AUDIO_SIZE:
+        raise HTTPException(400, f"Audio file exceeds 50 MB limit ({len(content)} bytes)")
+
+    def _work():
+        wrapper, _ = _load_asr(model)
+        waveform, sr, path = _load_asr_audio(content, "pulse")
+        try:
+            training_waveforms = generate_training_waveforms(wrapper, waveform, n_augments=3)
+            pulse = advpulse_attack(
+                wrapper, training_waveforms, target_text.strip(),
+                pulse_duration=pulse_duration, epsilon=epsilon,
+                iterations=int(iterations), lr=lr, physical=bool(physical),
+            )
+            adv = apply_advpulse(pulse, waveform)
+            resp = _asr_response(adv, waveform, wrapper, sr, target_text=target_text.strip())
+            resp["wer"] = compute_wer(target_text.strip(), resp.get("adversarial_text", ""))
+            return resp
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"AdvPulse attack failed: {str(e)}")
         finally:
             _cleanup(path)
 

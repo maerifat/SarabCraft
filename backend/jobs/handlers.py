@@ -57,6 +57,10 @@ from attacks.image.router import AttackCancelledError, run_attack_method
 from attacks.audio.speech_jamming import speech_jamming_band_noise, speech_jamming_untargeted
 from attacks.audio.transcription_attack import targeted_transcription_attack, targeted_transcription_pgd
 from attacks.audio.universal_muting import apply_universal_segment, generate_training_waveforms, universal_muting_attack
+from attacks.audio.genetic_attack import genetic_targeted_attack
+from attacks.audio.siren_attack import siren_attack_asr
+from attacks.audio.task_control import apply_task_control_segment, task_control_universal_attack
+from attacks.audio.advpulse import advpulse_attack, apply_advpulse
 
 logger = logging.getLogger("mlsec.jobs.handlers")
 
@@ -69,6 +73,10 @@ JOB_DEFINITIONS = {
     "asr_psychoacoustic": {"domain": "audio", "title": "Psychoacoustic Attack", "resume_supported": False},
     "asr_over_the_air": {"domain": "audio", "title": "Over-the-Air Attack", "resume_supported": False},
     "asr_speech_jamming": {"domain": "audio", "title": "Speech Jamming Attack", "resume_supported": False},
+    "asr_genetic": {"domain": "audio", "title": "Genetic Black-box Attack", "resume_supported": False},
+    "asr_siren": {"domain": "audio", "title": "SirenAttack (PSO)", "resume_supported": False},
+    "asr_task_control": {"domain": "audio", "title": "Task-Control Attack", "resume_supported": False},
+    "asr_advpulse": {"domain": "audio", "title": "AdvPulse Attack", "resume_supported": False},
     "asr_ua3": {"domain": "audio", "title": "UA3 Attack", "resume_supported": False},
     "batch_attack": {"domain": "image", "title": "Batch Attack", "resume_supported": True},
     "image_robustness": {"domain": "image", "title": "Image Robustness Comparison", "resume_supported": True},
@@ -659,6 +667,110 @@ def _run_asr_speech_jamming(job: dict) -> dict:
     else:
         adv = speech_jamming_untargeted(wrapper, waveform, epsilon=epsilon, iterations=iterations, lr=lr)
     result = audio_attacks._asr_response(adv, waveform, wrapper, sr)
+    return _asr_response_with_artifact(job, result)
+
+
+def _run_asr_genetic(job: dict) -> dict:
+    content, _ = _download_one(job, "audio_file")
+    target_text = str(_field(job, "target_text", "")).strip()
+    epsilon = _field_float(job, "epsilon", 0.05)
+    population_size = _field_int(job, "population_size", 20)
+    genetic_iterations = _field_int(job, "genetic_iterations", 300)
+    ge_iterations = _field_int(job, "gradient_estimation_iterations", 100)
+
+    wrapper, _, model_name, model_snapshot = _load_asr_from_job(job)
+    waveform, sr = _load_asr_audio_from_bytes(content, "job_gen")
+    update_job_progress(
+        job["job_id"], current=0, total=1,
+        message=f"Running genetic black-box attack on {snapshot_display_name(model_snapshot, model_name)}",
+    )
+    adv = genetic_targeted_attack(
+        wrapper, waveform, target_text,
+        epsilon=epsilon, population_size=population_size,
+        genetic_iterations=genetic_iterations,
+        gradient_estimation_iterations=ge_iterations,
+    )
+    result = audio_attacks._asr_response(adv, waveform, wrapper, sr, target_text=target_text)
+    result["wer"] = compute_wer(target_text, result.get("adversarial_text", ""))
+    return _asr_response_with_artifact(job, result)
+
+
+def _run_asr_siren(job: dict) -> dict:
+    content, _ = _download_one(job, "audio_file")
+    mode = str(_field(job, "mode", "Targeted"))
+    target_text = str(_field(job, "target_text", "")).strip()
+    epsilon = _field_float(job, "epsilon", 0.05)
+    n_particles = _field_int(job, "n_particles", 25)
+    iterations = _field_int(job, "iterations", 150)
+
+    wrapper, _, model_name, model_snapshot = _load_asr_from_job(job)
+    waveform, sr = _load_asr_audio_from_bytes(content, "job_siren")
+    update_job_progress(
+        job["job_id"], current=0, total=1,
+        message=f"Running SirenAttack (PSO) on {snapshot_display_name(model_snapshot, model_name)}",
+    )
+    targeted = mode == "Targeted"
+    adv = siren_attack_asr(
+        wrapper, waveform,
+        target_text=target_text if targeted else None,
+        targeted=targeted, epsilon=epsilon,
+        n_particles=n_particles, iterations=iterations,
+    )
+    extra = {"target_text": target_text} if targeted else {}
+    result = audio_attacks._asr_response(adv, waveform, wrapper, sr, **extra)
+    return _asr_response_with_artifact(job, result)
+
+
+def _run_asr_task_control(job: dict) -> dict:
+    content, _ = _download_one(job, "audio_file")
+    task = str(_field(job, "task", "translate"))
+    language = str(_field(job, "language", "")).strip()
+    segment_duration = _field_float(job, "segment_duration", 0.64)
+    iterations = _field_int(job, "iterations", 250)
+    lr = _field_float(job, "lr", 0.01)
+
+    wrapper, _, model_name, model_snapshot = _load_asr_from_job(job)
+    waveform, sr = _load_asr_audio_from_bytes(content, "job_task")
+    update_job_progress(
+        job["job_id"], current=0, total=1,
+        message=f"Running task-control attack on {snapshot_display_name(model_snapshot, model_name)}",
+    )
+    training_waveforms = generate_training_waveforms(wrapper, waveform, n_augments=3)
+    segment = task_control_universal_attack(
+        wrapper, training_waveforms, task=task,
+        language=(language or None),
+        segment_duration=segment_duration,
+        iterations=iterations, lr=lr,
+    )
+    adv = apply_task_control_segment(segment, waveform)
+    result = audio_attacks._asr_response(adv, waveform, wrapper, sr, task=task)
+    return _asr_response_with_artifact(job, result)
+
+
+def _run_asr_advpulse(job: dict) -> dict:
+    content, _ = _download_one(job, "audio_file")
+    target_text = str(_field(job, "target_text", "")).strip()
+    pulse_duration = _field_float(job, "pulse_duration", 0.3)
+    epsilon = _field_float(job, "epsilon", 0.1)
+    iterations = _field_int(job, "iterations", 400)
+    lr = _field_float(job, "lr", 0.005)
+    physical = _field_bool(job, "physical", False)
+
+    wrapper, _, model_name, model_snapshot = _load_asr_from_job(job)
+    waveform, sr = _load_asr_audio_from_bytes(content, "job_pulse")
+    update_job_progress(
+        job["job_id"], current=0, total=1,
+        message=f"Running AdvPulse attack on {snapshot_display_name(model_snapshot, model_name)}",
+    )
+    training_waveforms = generate_training_waveforms(wrapper, waveform, n_augments=3)
+    pulse = advpulse_attack(
+        wrapper, training_waveforms, target_text,
+        pulse_duration=pulse_duration, epsilon=epsilon,
+        iterations=iterations, lr=lr, physical=physical,
+    )
+    adv = apply_advpulse(pulse, waveform)
+    result = audio_attacks._asr_response(adv, waveform, wrapper, sr, target_text=target_text)
+    result["wer"] = compute_wer(target_text, result.get("adversarial_text", ""))
     return _asr_response_with_artifact(job, result)
 
 
@@ -1330,6 +1442,14 @@ def run_job(job: dict) -> dict | None:
             result = _run_asr_over_the_air(job)
         elif kind == "asr_speech_jamming":
             result = _run_asr_speech_jamming(job)
+        elif kind == "asr_genetic":
+            result = _run_asr_genetic(job)
+        elif kind == "asr_siren":
+            result = _run_asr_siren(job)
+        elif kind == "asr_task_control":
+            result = _run_asr_task_control(job)
+        elif kind == "asr_advpulse":
+            result = _run_asr_advpulse(job)
         elif kind == "asr_ua3":
             result = _run_asr_ua3(job)
         elif kind == "batch_attack":
